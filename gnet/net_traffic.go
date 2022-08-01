@@ -52,8 +52,6 @@ type BodyBytes struct {
 
 var _ ParsedNetworkContent = (*BodyBytes)(nil)
 
-func (BodyBytes) ParsedContent() {}
-
 func (b BodyBytes) ReleaseBuffers() {
 	b.MemView.Clear()
 }
@@ -67,7 +65,6 @@ type DroppedBytes int64
 
 var _ ParsedNetworkContent = (*DroppedBytes)(nil)
 
-func (DroppedBytes) ParsedContent()  {}
 func (DroppedBytes) ReleaseBuffers() {}
 func (DroppedBytes) Print() string   { return "" }
 
