@@ -95,7 +95,6 @@ type TCPPacketMetadata struct {
 
 var _ ParsedNetworkContent = (*TCPPacketMetadata)(nil)
 
-func (TCPPacketMetadata) ParsedContent()  {}
 func (TCPPacketMetadata) ReleaseBuffers() {}
 func (TCPPacketMetadata) Print() string   { return "" }
 
