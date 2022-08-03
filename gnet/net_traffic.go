@@ -112,7 +112,6 @@ type TCPConnectionMetadata struct {
 
 var _ ParsedNetworkContent = (*TCPConnectionMetadata)(nil)
 
-func (TCPConnectionMetadata) ParsedContent()  {}
 func (TCPConnectionMetadata) ReleaseBuffers() {}
 func (TCPConnectionMetadata) Print() string   { return "" }
 
