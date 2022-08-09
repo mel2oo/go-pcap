@@ -208,7 +208,6 @@ type HTTPRequest struct {
 
 var _ ParsedNetworkContent = (*HTTPRequest)(nil)
 
-func (r HTTPRequest) ParsedContent()  {}
 func (r HTTPRequest) ReleaseBuffers() { r.buffer.Release() }
 func (r HTTPRequest) Print() string {
 	return fmt.Sprintf("## HTTP -> Request: %s %s %s",
