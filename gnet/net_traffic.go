@@ -170,7 +170,6 @@ type DNSRequest struct {
 
 var _ ParsedNetworkContent = (*DNSRequest)(nil)
 
-func (DNSRequest) ParsedContent()  {}
 func (DNSRequest) ReleaseBuffers() {}
 func (d DNSRequest) Print() (str string) {
 	if !d.QR {
