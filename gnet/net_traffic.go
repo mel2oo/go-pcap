@@ -321,7 +321,6 @@ type TLSHandshakeMetadata struct {
 
 var _ ParsedNetworkContent = (*TLSHandshakeMetadata)(nil)
 
-func (TLSHandshakeMetadata) ParsedContent()  {}
 func (TLSHandshakeMetadata) ReleaseBuffers() {}
 func (TLSHandshakeMetadata) Print() string   { return "" }
 
