@@ -289,7 +289,6 @@ type TLSServerHello struct {
 
 var _ ParsedNetworkContent = (*TLSServerHello)(nil)
 
-func (TLSServerHello) ParsedContent()  {}
 func (TLSServerHello) ReleaseBuffers() {}
 func (TLSServerHello) Print() string   { return "" }
 
