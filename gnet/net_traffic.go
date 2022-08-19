@@ -239,7 +239,6 @@ type HTTPResponse struct {
 
 var _ ParsedNetworkContent = (*HTTPResponse)(nil)
 
-func (r HTTPResponse) ParsedContent()  {}
 func (r HTTPResponse) ReleaseBuffers() { r.buffer.Release() }
 func (r HTTPResponse) Print() string {
 	return fmt.Sprintf("## HTTP -> Response: %s",
@@ -267,7 +266,6 @@ type TLSClientHello struct {
 
 var _ ParsedNetworkContent = (*TLSClientHello)(nil)
 
-func (TLSClientHello) ParsedContent()  {}
 func (TLSClientHello) ReleaseBuffers() {}
 func (TLSClientHello) Print() string   { return "" }
 
