@@ -436,7 +436,6 @@ func (tls *TLSHandshakeMetadata) ApplicationLatencyMeasurable() bool {
 type HTTP2ConnectionPreface struct {
 }
 
-func (HTTP2ConnectionPreface) ParsedContent()  {}
 func (HTTP2ConnectionPreface) ReleaseBuffers() {}
 func (HTTP2ConnectionPreface) Print() string   { return "" }
 
@@ -446,6 +445,5 @@ func (HTTP2ConnectionPreface) Print() string   { return "" }
 type QUICHandshakeMetadata struct {
 }
 
-func (QUICHandshakeMetadata) ParsedContent()  {}
 func (QUICHandshakeMetadata) ReleaseBuffers() {}
 func (QUICHandshakeMetadata) Print() string   { return "" }
