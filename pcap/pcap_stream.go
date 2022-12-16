@@ -90,13 +90,10 @@ func (f *tcpFlow) reassembledWithIgnore(ignoreCount int, sg reassembly.ScatterGa
 	// Fetch returns a copy of the packet data.
 	pktData := memview.New(sg.Fetch(bytesAvailable)[ignoreCount:])
 
-	fmt.Printf("reassembled with %d bytes, isEnd=%v\n", bytesAvailable-ignoreCount, isEnd)
-
 	if f.currentParser == nil {
 		// Try to create a new parser.
 		fact, decision, discardFront := f.factorySelector.Select(pktData, isEnd)
 		if discardFront > 0 {
-			fmt.Printf("discarding %d bytes discarded by all parsers\n", discardFront)
 			f.handleUnparseable(sg.CaptureInfo(ignoreCount).Timestamp, discardFront)
 			pktData = pktData.SubView(discardFront, pktData.Len())
 		}
@@ -104,23 +101,19 @@ func (f *tcpFlow) reassembledWithIgnore(ignoreCount int, sg reassembly.ScatterGa
 		switch decision {
 		case gnet.NeedMoreData:
 			// Keep data for next reassembled call.
-			fmt.Printf("NeedMoreData to determine parser\n")
 			sg.KeepFrom(ignoreCount + int(discardFront))
 			f.unusedAcceptBuf = pktData
 			return
 		case gnet.Reject:
-			fmt.Printf("Reject by all parsers\n")
 			f.unusedAcceptBuf.Clear()
 			return
 		case gnet.Accept:
-			fmt.Printf("Accept by %s\n", fact.Name())
 			f.unusedAcceptBuf.Clear()
 
 			acForFirstByte := sg.AssemblerContext(ignoreCount + int(discardFront))
 			ctx, ok := acForFirstByte.(*assemblerCtxWithSeq)
 			if !ok {
 				// Previously we errored in this case:
-				fmt.Printf("received AssemblerContext %v without TCP seq info, treating %s data as raw bytes\n", acForFirstByte, fact.Name())
 				// but a user ran into quite a lot of them.  One theory is that this occurs when the HTTP response is in the
 				// second (or later) page of a reassembly buffer.  A test validates that, but there might be other causes
 				// that we don't yet understand.
@@ -136,7 +129,6 @@ func (f *tcpFlow) reassembledWithIgnore(ignoreCount int, sg reassembly.ScatterGa
 			f.currentParser = fact.CreateParser(f.bidiID, ctx.seq, ctx.ack)
 			f.currentParserCtx = ctx
 		default:
-			fmt.Printf("unsupported decision type %s, treating data as raw bytes\n", decision)
 			f.handleUnparseable(sg.CaptureInfo(ignoreCount).Timestamp, pktData.Len())
 			return
 		}
@@ -151,8 +143,6 @@ func (f *tcpFlow) reassembledWithIgnore(ignoreCount int, sg reassembly.ScatterGa
 
 		f.currentParser = nil
 		f.currentParserCtx = nil
-
-		fmt.Println("parser", err)
 	} else if pnc != nil {
 		// Parsing complete.
 		parseStart := f.currentParserCtx.GetCaptureInfo().Timestamp
@@ -164,7 +154,6 @@ func (f *tcpFlow) reassembledWithIgnore(ignoreCount int, sg reassembly.ScatterGa
 			// appear when we have called FlushCloseOlderThan, it would
 			// probably be misleading.
 			// TODO: what else can we log here to help identify what's going on?
-			fmt.Printf("AssemblerContext is nil for packet started at %v\n", parseStart)
 			atomic.AddUint64(&CountNilAssemblerContextAfterParse, 1)
 			parseEnd = parseStart
 		}
@@ -229,16 +218,26 @@ func (f *tcpFlow) toPNT(firstPacketTime time.Time, lastPacketTime time.Time,
 
 	// Endpoint interpretation logic from
 	// https://github.com/google/gopacket/blob/0ad7f2610e344e58c1c95e2adda5c3258da8e97b/layers/endpoints.go#L30
+	var netType gnet.NetworkLayerType
+
 	srcE, dstE := f.netFlow.Endpoints()
 	srcP, dstP := f.tcpFlow.Endpoints()
+
+	if len(srcE.Raw()) == 4 {
+		netType = gnet.IPv4
+	} else {
+		netType = gnet.IPv6
+	}
 	return gnet.ParsedNetworkTraffic{
-		SrcIP:           net.IP(srcE.Raw()),
-		SrcPort:         int(binary.BigEndian.Uint16(srcP.Raw())),
-		DstIP:           net.IP(dstE.Raw()),
-		DstPort:         int(binary.BigEndian.Uint16(dstP.Raw())),
-		Content:         c,
-		ObservationTime: firstPacketTime,
-		FinalPacketTime: lastPacketTime,
+		NetworkLayerType:   netType,
+		TransportLayerType: gnet.TCP,
+		SrcIP:              net.IP(srcE.Raw()),
+		SrcPort:            int(binary.BigEndian.Uint16(srcP.Raw())),
+		DstIP:              net.IP(dstE.Raw()),
+		DstPort:            int(binary.BigEndian.Uint16(dstP.Raw())),
+		Content:            c,
+		ObservationTime:    firstPacketTime,
+		FinalPacketTime:    lastPacketTime,
 	}
 }
 
@@ -269,7 +268,8 @@ func newTCPStream(clock clockWrapper, netFlow gopacket.Flow, outChan chan<- gnet
 	}
 }
 
-func (c *tcpStream) Accept(tcp *layers.TCP, _ gopacket.CaptureInfo, dir reassembly.TCPFlowDirection, _ reassembly.Sequence, start *bool, ac reassembly.AssemblerContext) bool {
+func (c *tcpStream) Accept(tcp *layers.TCP, _ gopacket.CaptureInfo, dir reassembly.TCPFlowDirection, _ reassembly.Sequence,
+	start *bool, ac reassembly.AssemblerContext) bool {
 	// We always force the TCP stream to start because we cannot guarantee that we
 	// will ever observe the SYN packet. For example, we could be looking at an
 	// existing connection that is actively reused by HTTP traffic. Without the
@@ -295,12 +295,22 @@ func (c *tcpStream) Accept(tcp *layers.TCP, _ gopacket.CaptureInfo, dir reassemb
 
 	// Output some metadata for the current packet.
 	{
+		var netType gnet.NetworkLayerType
+
 		srcE, dstE := c.netFlow.Endpoints()
+		if len(srcE.Raw()) == 4 {
+			netType = gnet.IPv4
+		} else {
+			netType = gnet.IPv6
+		}
+
 		c.outChan <- gnet.ParsedNetworkTraffic{
-			SrcIP:   net.IP(srcE.Raw()),
-			SrcPort: int(tcp.SrcPort),
-			DstIP:   net.IP(dstE.Raw()),
-			DstPort: int(tcp.DstPort),
+			NetworkLayerType:   netType,
+			TransportLayerType: gnet.TCP,
+			SrcIP:              net.IP(srcE.Raw()),
+			SrcPort:            int(tcp.SrcPort),
+			DstIP:              net.IP(dstE.Raw()),
+			DstPort:            int(tcp.DstPort),
 			Content: gnet.TCPPacketMetadata{
 				ConnectionID:        gid.NewConnectionID(uuid.UUID(c.bidiID)),
 				SYN:                 tcp.SYN,

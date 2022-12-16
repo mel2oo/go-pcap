@@ -1,10 +1,12 @@
 package pcap
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/mel2oo/go-pcap/gnet"
 	ghttp "github.com/mel2oo/go-pcap/gnet/http"
+	gtls "github.com/mel2oo/go-pcap/gnet/tls"
 	"github.com/mel2oo/go-pcap/mempool"
 )
 
@@ -26,8 +28,8 @@ func TestPcapParse(t *testing.T) {
 		ghttp.NewHTTPRequestParserFactory(pool),
 		ghttp.NewHTTPResponseParserFactory(pool),
 		// ghttp2.NewHTTP2PrefaceParserFactory(),
-		// gtls.NewTLSClientParserFactory(),
-		// gtls.NewTLSServerParserFactory(),
+		gtls.NewTLSClientParserFactory(),
+		gtls.NewTLSServerParserFactory(),
 	)
 	if err != nil {
 		t.Fail()
@@ -41,10 +43,18 @@ func TestPcapParse(t *testing.T) {
 			continue
 		}
 
+		// ignore ipv6
+		if c.NetworkLayerType == gnet.IPv6 {
+			c.Content.ReleaseBuffers()
+			continue
+		}
+
 		collected = append(collected, c)
 	}
 
-	for range collected {
-
+	for index, c := range collected {
+		fmt.Printf("index:%d src: %s:%d -> des: %s:%d %s\n",
+			index, c.SrcIP.String(), c.SrcPort,
+			c.DstIP.String(), c.DstPort, c.Content.Print())
 	}
 }

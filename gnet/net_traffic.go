@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/google/gopacket/layers"
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
 
@@ -18,12 +19,14 @@ import (
 
 // Represents a generic network traffic that has been parsed from the wire.
 type ParsedNetworkTraffic struct {
-	SrcIP     net.IP
-	SrcPort   int
-	DstIP     net.IP
-	DstPort   int
-	Content   ParsedNetworkContent
-	Interface string
+	NetworkLayerType   NetworkLayerType
+	TransportLayerType TransportLayerType
+	SrcIP              net.IP
+	SrcPort            int
+	DstIP              net.IP
+	DstPort            int
+	Content            ParsedNetworkContent
+	Interface          string
 
 	// The time at which the first packet was observed
 	ObservationTime time.Time
@@ -34,30 +37,57 @@ type ParsedNetworkTraffic struct {
 	FinalPacketTime time.Time
 }
 
+// NetworkLayerType
+type NetworkLayerType int
+
+const (
+	NetUnkonw NetworkLayerType = 0
+	IPv4      NetworkLayerType = 1
+	IPv6      NetworkLayerType = 2
+)
+
+// TransportLayerType
+type TransportLayerType int
+
+const (
+	TranUnkonw TransportLayerType = 0
+	TCP        TransportLayerType = 1
+	UDP        TransportLayerType = 2
+)
+
 // Interface implemented by all types of data that can be parsed from the
 // network.
 type ParsedNetworkContent interface {
-	implParsedNetworkContent()
-
-	// Releases back to their buffer pools the storage for any buffers held in
-	// this ParsedNetworkContent. Must be called before this ParsedNetworkContent
-	// becomes garbage.
+	ParsedContent()
 	ReleaseBuffers()
+	Print() string
 }
 
-type BodyBytes []byte
+// Content bytes.
+type BodyBytes struct {
+	memview.MemView
+}
 
 var _ ParsedNetworkContent = (*BodyBytes)(nil)
 
-func (BodyBytes) implParsedNetworkContent() {}
-func (BodyBytes) ReleaseBuffers()           {}
+func (BodyBytes) ParsedContent() {}
 
+func (b BodyBytes) ReleaseBuffers() {
+	b.MemView.Clear()
+}
+
+func (b BodyBytes) Print() string {
+	return fmt.Sprintf("%v", []byte(b.MemView.String()[:128]))
+}
+
+// Content bytes length.
 type DroppedBytes int64
 
 var _ ParsedNetworkContent = (*DroppedBytes)(nil)
 
-func (DroppedBytes) implParsedNetworkContent() {}
-func (DroppedBytes) ReleaseBuffers()           {}
+func (DroppedBytes) ParsedContent()  {}
+func (DroppedBytes) ReleaseBuffers() {}
+func (DroppedBytes) Print() string   { return "" }
 
 func (db DroppedBytes) String() string {
 	return fmt.Sprintf("dropped %d bytes", db)
@@ -77,7 +107,7 @@ type TCPPacketMetadata struct {
 	// Whether the FIN flag was set in the observed packet.
 	FIN bool
 
-	// Whether the RST flag was set in the observed packet.
+	// Whstring   {}ether the RST flag was set in the observed packet.
 	RST bool
 
 	// The size of the TCP payload.
@@ -86,8 +116,9 @@ type TCPPacketMetadata struct {
 
 var _ ParsedNetworkContent = (*TCPPacketMetadata)(nil)
 
-func (TCPPacketMetadata) implParsedNetworkContent() {}
-func (TCPPacketMetadata) ReleaseBuffers()           {}
+func (TCPPacketMetadata) ParsedContent()  {}
+func (TCPPacketMetadata) ReleaseBuffers() {}
+func (TCPPacketMetadata) Print() string   { return "" }
 
 // Represents metadata from an observed TCP connection.
 type TCPConnectionMetadata struct {
@@ -103,8 +134,9 @@ type TCPConnectionMetadata struct {
 
 var _ ParsedNetworkContent = (*TCPConnectionMetadata)(nil)
 
-func (TCPConnectionMetadata) implParsedNetworkContent() {}
-func (TCPConnectionMetadata) ReleaseBuffers()           {}
+func (TCPConnectionMetadata) ParsedContent()  {}
+func (TCPConnectionMetadata) ReleaseBuffers() {}
+func (TCPConnectionMetadata) Print() string   { return "" }
 
 // Identifies which of the two endpoints of a connection initiated that
 // connection.
@@ -134,6 +166,51 @@ const (
 	ConnectionReset TCPConnectionEndState = "RESET"
 )
 
+type DNSRequest struct {
+	// Header fields
+	ID     uint16
+	QR     bool
+	OpCode layers.DNSOpCode
+
+	AA bool  // Authoritative answer
+	TC bool  // Truncated
+	RD bool  // Recursion desired
+	RA bool  // Recursion available
+	Z  uint8 // Reserved for future use
+
+	ResponseCode layers.DNSResponseCode
+	QDCount      uint16 // Number of questions to expect
+	ANCount      uint16 // Number of answers to expect
+	NSCount      uint16 // Number of authorities to expect
+	ARCount      uint16 // Number of additional records to expect
+
+	// Entries
+	Questions   []layers.DNSQuestion
+	Answers     []layers.DNSResourceRecord
+	Authorities []layers.DNSResourceRecord
+	Additionals []layers.DNSResourceRecord
+}
+
+var _ ParsedNetworkContent = (*DNSRequest)(nil)
+
+func (DNSRequest) ParsedContent()  {}
+func (DNSRequest) ReleaseBuffers() {}
+func (d DNSRequest) Print() (str string) {
+	if !d.QR {
+		str = fmt.Sprintf("## DNS -> %d Questions:", d.ID)
+		for _, q := range d.Questions {
+			str = fmt.Sprintf("%s [%s]", str, string(q.Name))
+		}
+	} else {
+		str = fmt.Sprintf("## DNS <- %d Answers:", d.ID)
+		for _, a := range d.Answers {
+			str = fmt.Sprintf("%s [%s <%s>]",
+				str, string(a.Name), a.IP.String())
+		}
+	}
+	return str
+}
+
 type HTTPRequest struct {
 	// StreamID and Seq uniquely identify a pair of request and response.
 	StreamID uuid.UUID
@@ -155,10 +232,11 @@ type HTTPRequest struct {
 
 var _ ParsedNetworkContent = (*HTTPRequest)(nil)
 
-func (HTTPRequest) implParsedNetworkContent() {}
-
-func (r HTTPRequest) ReleaseBuffers() {
-	r.buffer.Release()
+func (r HTTPRequest) ParsedContent()  {}
+func (r HTTPRequest) ReleaseBuffers() { r.buffer.Release() }
+func (r HTTPRequest) Print() string {
+	return fmt.Sprintf("## HTTP -> Request: %s %s %s",
+		r.StreamID.String(), r.Method, r.URL.String())
 }
 
 // Returns a string key that associates this request with its corresponding
@@ -186,10 +264,11 @@ type HTTPResponse struct {
 
 var _ ParsedNetworkContent = (*HTTPResponse)(nil)
 
-func (HTTPResponse) implParsedNetworkContent() {}
-
-func (r HTTPResponse) ReleaseBuffers() {
-	r.buffer.Release()
+func (r HTTPResponse) ParsedContent()  {}
+func (r HTTPResponse) ReleaseBuffers() { r.buffer.Release() }
+func (r HTTPResponse) Print() string {
+	return fmt.Sprintf("## HTTP -> Response: %s Body: %v",
+		r.StreamID.String(), []byte(r.Body.String()[:128]))
 }
 
 // Returns a string key that associates this response with its corresponding
@@ -213,8 +292,9 @@ type TLSClientHello struct {
 
 var _ ParsedNetworkContent = (*TLSClientHello)(nil)
 
-func (TLSClientHello) implParsedNetworkContent() {}
-func (TLSClientHello) ReleaseBuffers()           {}
+func (TLSClientHello) ParsedContent()  {}
+func (TLSClientHello) ReleaseBuffers() {}
+func (TLSClientHello) Print() string   { return "" }
 
 // Represents metadata from an observed TLS 1.2 or 1.3 Server Hello message.
 type TLSServerHello struct {
@@ -236,8 +316,9 @@ type TLSServerHello struct {
 
 var _ ParsedNetworkContent = (*TLSServerHello)(nil)
 
-func (TLSServerHello) implParsedNetworkContent() {}
-func (TLSServerHello) ReleaseBuffers()           {}
+func (TLSServerHello) ParsedContent()  {}
+func (TLSServerHello) ReleaseBuffers() {}
+func (TLSServerHello) Print() string   { return "" }
 
 // Metadata from an observed TLS handshake.
 type TLSHandshakeMetadata struct {
@@ -268,8 +349,9 @@ type TLSHandshakeMetadata struct {
 
 var _ ParsedNetworkContent = (*TLSHandshakeMetadata)(nil)
 
-func (TLSHandshakeMetadata) implParsedNetworkContent() {}
-func (TLSHandshakeMetadata) ReleaseBuffers()           {}
+func (TLSHandshakeMetadata) ParsedContent()  {}
+func (TLSHandshakeMetadata) ReleaseBuffers() {}
+func (TLSHandshakeMetadata) Print() string   { return "" }
 
 func (tls *TLSHandshakeMetadata) HandshakeComplete() bool {
 	return tls.clientHandshakeSeen && tls.serverHandshakeSeen
@@ -383,8 +465,9 @@ func (tls *TLSHandshakeMetadata) ApplicationLatencyMeasurable() bool {
 type HTTP2ConnectionPreface struct {
 }
 
-func (HTTP2ConnectionPreface) implParsedNetworkContent() {}
-func (HTTP2ConnectionPreface) ReleaseBuffers()           {}
+func (HTTP2ConnectionPreface) ParsedContent()  {}
+func (HTTP2ConnectionPreface) ReleaseBuffers() {}
+func (HTTP2ConnectionPreface) Print() string   { return "" }
 
 // Represents an observed QUIC handshake (initial packet).
 // Currently empty because we're only interested in the presence
@@ -392,5 +475,6 @@ func (HTTP2ConnectionPreface) ReleaseBuffers()           {}
 type QUICHandshakeMetadata struct {
 }
 
-func (QUICHandshakeMetadata) implParsedNetworkContent() {}
-func (QUICHandshakeMetadata) ReleaseBuffers()           {}
+func (QUICHandshakeMetadata) ParsedContent()  {}
+func (QUICHandshakeMetadata) ReleaseBuffers() {}
+func (QUICHandshakeMetadata) Print() string   { return "" }
