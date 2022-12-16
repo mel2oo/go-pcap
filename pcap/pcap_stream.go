@@ -35,15 +35,13 @@ var CountBadAssemblerContextType uint64
 // Writes come from TCP assembler via tcpStream, while reads come from users
 // of this struct.
 type tcpFlow struct {
-	clock clockWrapper // constant
-
 	netFlow gopacket.Flow // constant
 	tcpFlow gopacket.Flow // constant
 
 	// Shared with tcpFlow in the opposite direction of this flow.
 	bidiID gnet.TCPBidiID // constant
 
-	outChan chan<- gnet.ParsedNetworkTraffic
+	outChan chan<- gnet.NetTraffic
 
 	factorySelector gnet.TCPParserFactorySelector
 
@@ -61,9 +59,9 @@ type tcpFlow struct {
 	unusedAcceptBuf memview.MemView
 }
 
-func newTCPFlow(clock clockWrapper, bidiID gnet.TCPBidiID, nf, tf gopacket.Flow, outChan chan<- gnet.ParsedNetworkTraffic, fs gnet.TCPParserFactorySelector) *tcpFlow {
+func newTCPFlow(bidiID gnet.TCPBidiID, nf, tf gopacket.Flow,
+	outChan chan<- gnet.NetTraffic, fs gnet.TCPParserFactorySelector) *tcpFlow {
 	return &tcpFlow{
-		clock:           clock,
 		netFlow:         nf,
 		tcpFlow:         tf,
 		bidiID:          bidiID,
@@ -84,7 +82,8 @@ func (f *tcpFlow) reassembled(sg reassembly.ScatterGather, ac reassembly.Assembl
 }
 
 // Ignore leading bytes from sg.
-func (f *tcpFlow) reassembledWithIgnore(ignoreCount int, sg reassembly.ScatterGather, ac reassembly.AssemblerContext) {
+func (f *tcpFlow) reassembledWithIgnore(ignoreCount int, sg reassembly.ScatterGather,
+	ac reassembly.AssemblerContext) {
 	_, _, isEnd, _ := sg.Info()
 	bytesAvailable, _ := sg.Lengths()
 	// Fetch returns a copy of the packet data.
@@ -203,14 +202,14 @@ func (f *tcpFlow) reassemblyComplete() {
 		// We estimate the time with current time instead of tracking a separate
 		// context since unusedAcceptBuf is unlikely to be used and is almost
 		// certainly very small in size.
-		f.outChan <- f.toPNT(f.clock.Now(), f.clock.Now(), gnet.DroppedBytes(f.unusedAcceptBuf.Len()))
+		f.outChan <- f.toPNT(time.Now(), time.Now(), gnet.DroppedBytes(f.unusedAcceptBuf.Len()))
 	}
 }
 
 func (f *tcpFlow) toPNT(firstPacketTime time.Time, lastPacketTime time.Time,
-	c gnet.ParsedNetworkContent) gnet.ParsedNetworkTraffic {
+	c gnet.ParsedNetworkContent) gnet.NetTraffic {
 	if firstPacketTime.IsZero() {
-		firstPacketTime = f.clock.Now()
+		firstPacketTime = time.Now()
 	}
 	if lastPacketTime.IsZero() {
 		lastPacketTime = firstPacketTime
@@ -218,26 +217,17 @@ func (f *tcpFlow) toPNT(firstPacketTime time.Time, lastPacketTime time.Time,
 
 	// Endpoint interpretation logic from
 	// https://github.com/google/gopacket/blob/0ad7f2610e344e58c1c95e2adda5c3258da8e97b/layers/endpoints.go#L30
-	var netType gnet.NetworkLayerType
-
 	srcE, dstE := f.netFlow.Endpoints()
 	srcP, dstP := f.tcpFlow.Endpoints()
 
-	if len(srcE.Raw()) == 4 {
-		netType = gnet.IPv4
-	} else {
-		netType = gnet.IPv6
-	}
-	return gnet.ParsedNetworkTraffic{
-		NetworkLayerType:   netType,
-		TransportLayerType: gnet.TCP,
-		SrcIP:              net.IP(srcE.Raw()),
-		SrcPort:            int(binary.BigEndian.Uint16(srcP.Raw())),
-		DstIP:              net.IP(dstE.Raw()),
-		DstPort:            int(binary.BigEndian.Uint16(dstP.Raw())),
-		Content:            c,
-		ObservationTime:    firstPacketTime,
-		FinalPacketTime:    lastPacketTime,
+	return gnet.NetTraffic{
+		SrcIP:           net.IP(srcE.Raw()),
+		SrcPort:         int(binary.BigEndian.Uint16(srcP.Raw())),
+		DstIP:           net.IP(dstE.Raw()),
+		DstPort:         int(binary.BigEndian.Uint16(dstP.Raw())),
+		Content:         c,
+		ObservationTime: firstPacketTime,
+		FinalPacketTime: lastPacketTime,
 	}
 }
 
@@ -245,7 +235,6 @@ func (f *tcpFlow) toPNT(firstPacketTime time.Time, lastPacketTime time.Time,
 // reassembly.Stream interface to receive reassembled packets for BOTH flows,
 // which it then directs to the correct tcpFlow.
 type tcpStream struct {
-	clock  clockWrapper   // constant
 	bidiID gnet.TCPBidiID // constant
 
 	// Network layer flow.
@@ -255,12 +244,12 @@ type tcpStream struct {
 	flows map[reassembly.TCPFlowDirection]*tcpFlow
 
 	factorySelector gnet.TCPParserFactorySelector
-	outChan         chan<- gnet.ParsedNetworkTraffic
+	outChan         chan<- gnet.NetTraffic
 }
 
-func newTCPStream(clock clockWrapper, netFlow gopacket.Flow, outChan chan<- gnet.ParsedNetworkTraffic, fs gnet.TCPParserFactorySelector) *tcpStream {
+func newTCPStream(netFlow gopacket.Flow,
+	outChan chan<- gnet.NetTraffic, fs gnet.TCPParserFactorySelector) *tcpStream {
 	return &tcpStream{
-		clock:           clock,
 		bidiID:          gnet.TCPBidiID(uuid.New()),
 		netFlow:         netFlow,
 		factorySelector: fs,
@@ -268,7 +257,8 @@ func newTCPStream(clock clockWrapper, netFlow gopacket.Flow, outChan chan<- gnet
 	}
 }
 
-func (c *tcpStream) Accept(tcp *layers.TCP, _ gopacket.CaptureInfo, dir reassembly.TCPFlowDirection, _ reassembly.Sequence,
+func (c *tcpStream) Accept(tcp *layers.TCP, _ gopacket.CaptureInfo,
+	dir reassembly.TCPFlowDirection, _ reassembly.Sequence,
 	start *bool, ac reassembly.AssemblerContext) bool {
 	// We always force the TCP stream to start because we cannot guarantee that we
 	// will ever observe the SYN packet. For example, we could be looking at an
@@ -285,8 +275,8 @@ func (c *tcpStream) Accept(tcp *layers.TCP, _ gopacket.CaptureInfo, dir reassemb
 		// data from this tcpStream or it is garbage collected by the assembler
 		// after streamTimeout.
 		tf, _ := gopacket.FlowFromEndpoints(layers.NewTCPPortEndpoint(tcp.SrcPort), layers.NewTCPPortEndpoint(tcp.DstPort))
-		s1 := newTCPFlow(c.clock, c.bidiID, c.netFlow, tf, c.outChan, c.factorySelector)
-		s2 := newTCPFlow(c.clock, c.bidiID, c.netFlow.Reverse(), tf.Reverse(), c.outChan, c.factorySelector)
+		s1 := newTCPFlow(c.bidiID, c.netFlow, tf, c.outChan, c.factorySelector)
+		s2 := newTCPFlow(c.bidiID, c.netFlow.Reverse(), tf.Reverse(), c.outChan, c.factorySelector)
 		c.flows = map[reassembly.TCPFlowDirection]*tcpFlow{
 			dir:           s1,
 			dir.Reverse(): s2,
@@ -295,22 +285,13 @@ func (c *tcpStream) Accept(tcp *layers.TCP, _ gopacket.CaptureInfo, dir reassemb
 
 	// Output some metadata for the current packet.
 	{
-		var netType gnet.NetworkLayerType
-
 		srcE, dstE := c.netFlow.Endpoints()
-		if len(srcE.Raw()) == 4 {
-			netType = gnet.IPv4
-		} else {
-			netType = gnet.IPv6
-		}
 
-		c.outChan <- gnet.ParsedNetworkTraffic{
-			NetworkLayerType:   netType,
-			TransportLayerType: gnet.TCP,
-			SrcIP:              net.IP(srcE.Raw()),
-			SrcPort:            int(tcp.SrcPort),
-			DstIP:              net.IP(dstE.Raw()),
-			DstPort:            int(tcp.DstPort),
+		c.outChan <- gnet.NetTraffic{
+			SrcIP:   net.IP(srcE.Raw()),
+			SrcPort: int(tcp.SrcPort),
+			DstIP:   net.IP(dstE.Raw()),
+			DstPort: int(tcp.DstPort),
 			Content: gnet.TCPPacketMetadata{
 				ConnectionID:        gid.NewConnectionID(uuid.UUID(c.bidiID)),
 				SYN:                 tcp.SYN,

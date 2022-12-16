@@ -11,7 +11,8 @@ func CreatePacket(src, dst net.IP, srcPort, dstPort int, payload []byte) gopacke
 	return CreatePacketWithSeq(src, dst, srcPort, dstPort, payload, 0)
 }
 
-func createPacketLayers(src, dst net.IP, srcPort, dstPort int, seq uint32) (*layers.Ethernet, *layers.IPv4, *layers.TCP) {
+func createPacketLayers(src, dst net.IP, srcPort, dstPort int,
+	seq uint32) (*layers.Ethernet, *layers.IPv4, *layers.TCP) {
 	ethernetLayer := &layers.Ethernet{
 		EthernetType: layers.EthernetTypeIPv4,
 		SrcMAC:       net.HardwareAddr{0xFF, 0xAA, 0xFA, 0xAA, 0xFF, 0xAA},
@@ -49,7 +50,8 @@ func CreateTCPSYNAndACK(src, dst net.IP, srcPort, dstPort int, seq uint32) gopac
 	return gopacket.NewPacket(buffer.Bytes(), layers.LayerTypeEthernet, gopacket.Default)
 }
 
-func CreatePacketWithSeq(src, dst net.IP, srcPort, dstPort int, payload []byte, seq uint32) gopacket.Packet {
+func CreatePacketWithSeq(src, dst net.IP, srcPort, dstPort int, payload []byte,
+	seq uint32) gopacket.Packet {
 	ethernetLayer, ipLayer, tcpLayer := createPacketLayers(src, dst, srcPort, dstPort, seq)
 	buffer := gopacket.NewSerializeBuffer()
 	opts := gopacket.SerializeOptions{FixLengths: true}

@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
@@ -18,15 +19,14 @@ import (
 )
 
 // Represents a generic network traffic that has been parsed from the wire.
-type ParsedNetworkTraffic struct {
-	NetworkLayerType   NetworkLayerType
-	TransportLayerType TransportLayerType
-	SrcIP              net.IP
-	SrcPort            int
-	DstIP              net.IP
-	DstPort            int
-	Content            ParsedNetworkContent
-	Interface          string
+type NetTraffic struct {
+	LayerClass gopacket.LayerClass
+	SrcIP      net.IP
+	SrcPort    int
+	DstIP      net.IP
+	DstPort    int
+	Content    ParsedNetworkContent
+	Interface  string
 
 	// The time at which the first packet was observed
 	ObservationTime time.Time
@@ -41,9 +41,14 @@ type ParsedNetworkTraffic struct {
 type NetworkLayerType int
 
 const (
-	NetUnkonw NetworkLayerType = 0
-	IPv4      NetworkLayerType = 1
-	IPv6      NetworkLayerType = 2
+	NetUnkonw NetworkLayerType = 0 + iota
+	IP
+	IPv6
+	IGMP
+	ICMP
+	ICMPv6
+	ARP
+	RARP
 )
 
 // TransportLayerType
@@ -77,7 +82,7 @@ func (b BodyBytes) ReleaseBuffers() {
 }
 
 func (b BodyBytes) Print() string {
-	return fmt.Sprintf("%v", []byte(b.MemView.String()[:128]))
+	return ""
 }
 
 // Content bytes length.
@@ -267,8 +272,8 @@ var _ ParsedNetworkContent = (*HTTPResponse)(nil)
 func (r HTTPResponse) ParsedContent()  {}
 func (r HTTPResponse) ReleaseBuffers() { r.buffer.Release() }
 func (r HTTPResponse) Print() string {
-	return fmt.Sprintf("## HTTP -> Response: %s Body: %v",
-		r.StreamID.String(), []byte(r.Body.String()[:128]))
+	return fmt.Sprintf("## HTTP -> Response: %s",
+		r.StreamID.String())
 }
 
 // Returns a string key that associates this response with its corresponding
