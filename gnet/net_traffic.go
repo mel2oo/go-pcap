@@ -41,7 +41,6 @@ type NetTraffic struct {
 // Interface implemented by all types of data that can be parsed from the
 // network.
 type ParsedNetworkContent interface {
-	ParsedContent()
 	ReleaseBuffers()
 	Print() string
 }
