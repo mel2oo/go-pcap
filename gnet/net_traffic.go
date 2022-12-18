@@ -21,6 +21,7 @@ import (
 // Represents a generic network traffic that has been parsed from the wire.
 type NetTraffic struct {
 	LayerClass gopacket.LayerClass
+	LayerType  string
 	SrcIP      net.IP
 	SrcPort    int
 	DstIP      net.IP
@@ -36,29 +37,6 @@ type NetTraffic struct {
 	// for single packets.
 	FinalPacketTime time.Time
 }
-
-// NetworkLayerType
-type NetworkLayerType int
-
-const (
-	NetUnkonw NetworkLayerType = 0 + iota
-	IP
-	IPv6
-	IGMP
-	ICMP
-	ICMPv6
-	ARP
-	RARP
-)
-
-// TransportLayerType
-type TransportLayerType int
-
-const (
-	TranUnkonw TransportLayerType = 0
-	TCP        TransportLayerType = 1
-	UDP        TransportLayerType = 2
-)
 
 // Interface implemented by all types of data that can be parsed from the
 // network.

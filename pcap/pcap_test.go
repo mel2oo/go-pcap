@@ -45,6 +45,7 @@ func TestPcapParse(t *testing.T) {
 
 		// ignore ipv6
 		if c.LayerClass != nil {
+			c.LayerClass.LayerTypes()
 			if c.LayerClass.Contains(layers.LayerTypeIPv6) {
 				c.Content.ReleaseBuffers()
 				continue

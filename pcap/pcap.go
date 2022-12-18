@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net"
 	"time"
 
 	"github.com/google/gopacket"
@@ -144,12 +143,8 @@ func (p *TrafficParser) PacketToNetTraffic(assembler *reassembly.Assembler, pack
 		}
 	}()
 
-	if packet.NetworkLayer() == nil {
-		return
-	}
-
-	// Use timestamp current or use the more precise timestamp on the packet, if available.
 	observationTime := time.Now()
+	// Use timestamp current or use the more precise timestamp on the packet, if available.
 	if packet.Metadata() != nil {
 		if t := packet.Metadata().Timestamp; !t.IsZero() {
 			observationTime = t
@@ -161,107 +156,89 @@ func (p *TrafficParser) PacketToNetTraffic(assembler *reassembly.Assembler, pack
 	for _, layer := range packet.Layers() {
 		types = append(types, layer.LayerType())
 	}
-	class := gopacket.NewLayerClass(types)
 
-	// Get network layer type, src and dst address
-	var srcIP, dstIP net.IP
-	switch l := packet.NetworkLayer().(type) {
+	traffic := &gnet.NetTraffic{
+		ObservationTime: observationTime,
+		LayerClass:      gopacket.NewLayerClass(types),
+	}
+	if PacketToTraffic(assembler, packet, traffic); traffic.Content != nil {
+		p.outchan <- *traffic
+	}
+}
+
+func PacketToTraffic(assembler *reassembly.Assembler, packet gopacket.Packet, traffic *gnet.NetTraffic) {
+	NetLayerToTraffic(assembler, packet, traffic)
+}
+
+func NetLayerToTraffic(assembler *reassembly.Assembler, packet gopacket.Packet, traffic *gnet.NetTraffic) {
+	if packet.NetworkLayer() == nil {
+		return
+	}
+
+	switch layer := packet.NetworkLayer().(type) {
 	case *layers.IPv4:
-		srcIP = l.SrcIP
-		dstIP = l.DstIP
+		traffic.SrcIP = layer.SrcIP
+		traffic.DstIP = layer.DstIP
 	case *layers.IPv6:
-		srcIP = l.SrcIP
-		dstIP = l.DstIP
+		traffic.SrcIP = layer.SrcIP
+		traffic.DstIP = layer.DstIP
 	}
 
-	transportLayer := packet.TransportLayer()
+	TransLayerToTraffic(assembler, packet, traffic)
+}
 
-	if transportLayer == nil {
-		p.outchan <- gnet.NetTraffic{
-			LayerClass: class,
-			SrcIP:      srcIP,
-			DstIP:      dstIP,
-			Content: gnet.BodyBytes{
-				MemView: memview.New(packet.NetworkLayer().LayerPayload()),
-			},
-
-			ObservationTime: observationTime,
-		}
-		return
-	}
-
-	var srcPort, dstPort int
-	switch t := transportLayer.(type) {
+func TransLayerToTraffic(assembler *reassembly.Assembler, packet gopacket.Packet, traffic *gnet.NetTraffic) {
+	switch layer := packet.TransportLayer().(type) {
 	case *layers.TCP:
-		// Let TCP reassembler do extra magic to parse out higher layer protocols.
-		assembler.AssembleWithContext(packet.NetworkLayer().NetworkFlow(), t,
-			contextFromTCPPacket(packet, t))
-		return
+		assembler.AssembleWithContext(
+			packet.NetworkLayer().NetworkFlow(),
+			layer,
+			contextFromTCPPacket(packet, layer),
+		)
+
 	case *layers.UDP:
-		srcPort = int(t.SrcPort)
-		dstPort = int(t.DstPort)
+		UdpLayerToTraffic(packet, traffic)
+
 	default:
-		p.outchan <- gnet.NetTraffic{
-			LayerClass: class,
-			SrcIP:      srcIP,
-			DstIP:      dstIP,
-			Content: gnet.BodyBytes{
-				MemView: memview.New(t.LayerPayload()),
-			},
-			ObservationTime: observationTime,
-		}
-		return
-	}
-
-	applicationLayer := packet.ApplicationLayer()
-
-	switch t := applicationLayer.(type) {
-	case *layers.DNS:
-		p.outchan <- gnet.NetTraffic{
-			LayerClass: class,
-			SrcIP:      srcIP,
-			SrcPort:    srcPort,
-			DstIP:      dstIP,
-			DstPort:    dstPort,
-			Content: gnet.DNSRequest{
-				ID:     t.ID,
-				QR:     t.QR,
-				OpCode: t.OpCode,
-
-				AA: t.AA,
-				TC: t.TC,
-				RD: t.RD,
-				RA: t.RA,
-				Z:  t.Z,
-
-				ResponseCode: t.ResponseCode,
-				QDCount:      t.QDCount,
-				ANCount:      t.ANCount,
-				NSCount:      t.NSCount,
-				ARCount:      t.ARCount,
-
-				Questions:   t.Questions,
-				Answers:     t.Answers,
-				Authorities: t.Authorities,
-				Additionals: t.Additionals,
-			},
-			ObservationTime: observationTime,
-		}
-	default:
-		p.outchan <- gnet.NetTraffic{
-			LayerClass: gopacket.NewLayerClass(types),
-			SrcIP:      srcIP,
-			SrcPort:    srcPort,
-			DstIP:      dstIP,
-			DstPort:    dstPort,
-			Content: gnet.BodyBytes{
-				MemView: memview.New(packet.NetworkLayer().LayerPayload()),
-			},
-			ObservationTime: observationTime,
+		traffic.Content = gnet.BodyBytes{
+			MemView: memview.New(packet.NetworkLayer().LayerPayload()),
 		}
 	}
 }
 
-func (p *TrafficParser) NetLayerToTraffic() {
+func UdpLayerToTraffic(packet gopacket.Packet, traffic *gnet.NetTraffic) {
+	traffic.SrcPort = int(packet.TransportLayer().(*layers.UDP).SrcPort)
+	traffic.DstPort = int(packet.TransportLayer().(*layers.UDP).DstPort)
+	traffic.LayerType = packet.TransportLayer().LayerType().String()
 
+	switch l := packet.ApplicationLayer().(type) {
+	case *layers.DNS:
+		traffic.LayerType = l.LayerType().String()
+		traffic.Content = gnet.DNSRequest{
+			ID:     l.ID,
+			QR:     l.QR,
+			OpCode: l.OpCode,
+
+			AA: l.AA,
+			TC: l.TC,
+			RD: l.RD,
+			RA: l.RA,
+			Z:  l.Z,
+
+			ResponseCode: l.ResponseCode,
+			QDCount:      l.QDCount,
+			ANCount:      l.ANCount,
+			NSCount:      l.NSCount,
+			ARCount:      l.ARCount,
+
+			Questions:   l.Questions,
+			Answers:     l.Answers,
+			Authorities: l.Authorities,
+			Additionals: l.Additionals,
+		}
+	default:
+		traffic.Content = gnet.BodyBytes{
+			MemView: memview.New(packet.TransportLayer().LayerPayload()),
+		}
+	}
 }
