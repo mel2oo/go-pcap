@@ -114,7 +114,7 @@ func (p *httpParser) Parse(input memview.MemView, isEnd bool) (result gnet.Parse
 	return
 }
 
-func newHTTPParser(isRequest bool, bidiID gnet.TCPBidiID, seq, ack reassembly.Sequence, pool mempool.BufferPool) *httpParser {
+func newHTTPParser(isRequest bool, bidiID uuid.UUID, seq, ack reassembly.Sequence, pool mempool.BufferPool) *httpParser {
 	// Unfortunately, go's http request parser blocks. So we need to run it in a
 	// separate goroutine. This needs to be addressed as part of
 	// https://app.clubhouse.io/akita-software/story/600

@@ -151,15 +151,8 @@ func (p *TrafficParser) PacketToNetTraffic(assembler *reassembly.Assembler, pack
 		}
 	}
 
-	// packet layer class
-	types := make([]gopacket.LayerType, 0)
-	for _, layer := range packet.Layers() {
-		types = append(types, layer.LayerType())
-	}
-
 	traffic := &gnet.NetTraffic{
 		ObservationTime: observationTime,
-		LayerClass:      gopacket.NewLayerClass(types),
 	}
 	if PacketToTraffic(assembler, packet, traffic); traffic.Content != nil {
 		p.outchan <- *traffic
@@ -188,6 +181,10 @@ func NetLayerToTraffic(assembler *reassembly.Assembler, packet gopacket.Packet, 
 }
 
 func TransLayerToTraffic(assembler *reassembly.Assembler, packet gopacket.Packet, traffic *gnet.NetTraffic) {
+	if packet.TransportLayer() != nil {
+		traffic.LayerType = packet.TransportLayer().LayerType().String()
+	}
+
 	switch layer := packet.TransportLayer().(type) {
 	case *layers.TCP:
 		assembler.AssembleWithContext(
@@ -209,7 +206,6 @@ func TransLayerToTraffic(assembler *reassembly.Assembler, packet gopacket.Packet
 func UdpLayerToTraffic(packet gopacket.Packet, traffic *gnet.NetTraffic) {
 	traffic.SrcPort = int(packet.TransportLayer().(*layers.UDP).SrcPort)
 	traffic.DstPort = int(packet.TransportLayer().(*layers.UDP).DstPort)
-	traffic.LayerType = packet.TransportLayer().LayerType().String()
 
 	switch l := packet.ApplicationLayer().(type) {
 	case *layers.DNS:

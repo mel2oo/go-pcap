@@ -8,26 +8,22 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
 
-	"github.com/mel2oo/go-pcap/gid"
 	"github.com/mel2oo/go-pcap/mempool"
 	"github.com/mel2oo/go-pcap/memview"
 )
 
 // Represents a generic network traffic that has been parsed from the wire.
 type NetTraffic struct {
-	LayerClass gopacket.LayerClass
-	LayerType  string
-	SrcIP      net.IP
-	SrcPort    int
-	DstIP      net.IP
-	DstPort    int
-	Content    ParsedNetworkContent
-	Interface  string
+	LayerType string
+	SrcIP     net.IP
+	SrcPort   int
+	DstIP     net.IP
+	DstPort   int
+	Content   ParsedNetworkContent
 
 	// The time at which the first packet was observed
 	ObservationTime time.Time
@@ -75,7 +71,7 @@ func (db DroppedBytes) String() string {
 // Represents metadata from an observed TCP packet.
 type TCPPacketMetadata struct {
 	// Uniquely identifies a TCP connection.
-	ConnectionID gid.ConnectionID
+	ConnectionID uuid.UUID
 
 	// Whether the SYN flag was set in the observed packet.
 	SYN bool
@@ -90,7 +86,7 @@ type TCPPacketMetadata struct {
 	RST bool
 
 	// The size of the TCP payload.
-	PayloadLength_bytes int
+	Payloads []byte
 }
 
 var _ ParsedNetworkContent = (*TCPPacketMetadata)(nil)
@@ -101,7 +97,7 @@ func (TCPPacketMetadata) Print() string   { return "" }
 // Represents metadata from an observed TCP connection.
 type TCPConnectionMetadata struct {
 	// Uniquely identifies a TCP connection.
-	ConnectionID gid.ConnectionID
+	ConnectionID uuid.UUID
 
 	// Identifies which side of the connection was the connection initiator.
 	Initiator TCPConnectionInitiator
@@ -254,7 +250,7 @@ func (r HTTPResponse) GetStreamKey() string {
 // Represents metadata from an observed TLS 1.2 or 1.3 Client Hello message.
 type TLSClientHello struct {
 	// Identifies the TCP connection to which this message belongs.
-	ConnectionID gid.ConnectionID
+	ConnectionID uuid.UUID
 
 	// The DNS hostname extracted from the SNI extension, if any.
 	Hostname *string
@@ -272,7 +268,7 @@ func (TLSClientHello) Print() string   { return "" }
 // Represents metadata from an observed TLS 1.2 or 1.3 Server Hello message.
 type TLSServerHello struct {
 	// Identifies the TCP connection to which this message belongs.
-	ConnectionID gid.ConnectionID
+	ConnectionID uuid.UUID
 
 	// The inferred TLS version.
 	Version TLSVersion
@@ -295,7 +291,7 @@ func (TLSServerHello) Print() string   { return "" }
 // Metadata from an observed TLS handshake.
 type TLSHandshakeMetadata struct {
 	// Uniquely identifies the underlying TCP connection.
-	ConnectionID gid.ConnectionID
+	ConnectionID uuid.UUID
 
 	// The inferred TLS version. Only populated if the Server Hello was seen.
 	Version *TLSVersion
@@ -330,11 +326,11 @@ func (tls *TLSHandshakeMetadata) HandshakeComplete() bool {
 
 func (tls *TLSHandshakeMetadata) AddClientHello(hello *TLSClientHello) error {
 	if tls.ConnectionID != hello.ConnectionID {
-		return errors.Errorf("mismatched connections: %s and %s", gid.String(tls.ConnectionID), gid.String(hello.ConnectionID))
+		return errors.Errorf("mismatched connections: %s and %s", tls.ConnectionID.String(), hello.ConnectionID.String())
 	}
 
 	if tls.clientHandshakeSeen {
-		return errors.Errorf("multiple client handshakes seen for connection %s", gid.String(tls.ConnectionID))
+		return errors.Errorf("multiple client handshakes seen for connection %s", tls.ConnectionID.String())
 	}
 	tls.clientHandshakeSeen = true
 
@@ -353,11 +349,11 @@ func (tls *TLSHandshakeMetadata) AddClientHello(hello *TLSClientHello) error {
 
 func (tls *TLSHandshakeMetadata) AddServerHello(hello *TLSServerHello) error {
 	if tls.ConnectionID != hello.ConnectionID {
-		return errors.Errorf("mismatched connections: %s and %s", gid.String(tls.ConnectionID), gid.String(hello.ConnectionID))
+		return errors.Errorf("mismatched connections: %s and %s", tls.ConnectionID.String(), hello.ConnectionID.String())
 	}
 
 	if tls.serverHandshakeSeen {
-		return errors.Errorf("multiple server handshakes seen for connection %s", gid.String(tls.ConnectionID))
+		return errors.Errorf("multiple server handshakes seen for connection %s", tls.ConnectionID.String())
 	}
 	tls.serverHandshakeSeen = true
 

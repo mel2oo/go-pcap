@@ -2,6 +2,7 @@ package tls
 
 import (
 	"github.com/google/gopacket/reassembly"
+	"github.com/google/uuid"
 	"github.com/mel2oo/go-pcap/gnet"
 	"github.com/mel2oo/go-pcap/memview"
 )
@@ -72,6 +73,6 @@ func (*tlsServerParserFactory) accepts(input memview.MemView) (decision gnet.Acc
 	return gnet.Accept, 0
 }
 
-func (factory *tlsServerParserFactory) CreateParser(id gnet.TCPBidiID, seq, ack reassembly.Sequence) gnet.TCPParser {
+func (factory *tlsServerParserFactory) CreateParser(id uuid.UUID, seq, ack reassembly.Sequence) gnet.TCPParser {
 	return newTLSServerHelloParser(id)
 }

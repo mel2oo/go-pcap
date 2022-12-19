@@ -11,7 +11,6 @@ import (
 	"github.com/google/gopacket/layers"
 	"github.com/google/gopacket/reassembly"
 	"github.com/google/uuid"
-	"github.com/mel2oo/go-pcap/gid"
 	"github.com/mel2oo/go-pcap/gnet"
 	"github.com/mel2oo/go-pcap/memview"
 )
@@ -39,7 +38,7 @@ type tcpFlow struct {
 	tcpFlow gopacket.Flow // constant
 
 	// Shared with tcpFlow in the opposite direction of this flow.
-	bidiID gnet.TCPBidiID // constant
+	bidiID uuid.UUID // constant
 
 	outChan chan<- gnet.NetTraffic
 
@@ -59,7 +58,7 @@ type tcpFlow struct {
 	unusedAcceptBuf memview.MemView
 }
 
-func newTCPFlow(bidiID gnet.TCPBidiID, nf, tf gopacket.Flow,
+func newTCPFlow(bidiID uuid.UUID, nf, tf gopacket.Flow,
 	outChan chan<- gnet.NetTraffic, fs gnet.TCPParserFactorySelector) *tcpFlow {
 	return &tcpFlow{
 		netFlow:         nf,
@@ -221,6 +220,7 @@ func (f *tcpFlow) toPNT(firstPacketTime time.Time, lastPacketTime time.Time,
 	srcP, dstP := f.tcpFlow.Endpoints()
 
 	return gnet.NetTraffic{
+		LayerType:       "TCP",
 		SrcIP:           net.IP(srcE.Raw()),
 		SrcPort:         int(binary.BigEndian.Uint16(srcP.Raw())),
 		DstIP:           net.IP(dstE.Raw()),
@@ -235,7 +235,7 @@ func (f *tcpFlow) toPNT(firstPacketTime time.Time, lastPacketTime time.Time,
 // reassembly.Stream interface to receive reassembled packets for BOTH flows,
 // which it then directs to the correct tcpFlow.
 type tcpStream struct {
-	bidiID gnet.TCPBidiID // constant
+	bidiID uuid.UUID // constant
 
 	// Network layer flow.
 	netFlow gopacket.Flow
@@ -250,7 +250,7 @@ type tcpStream struct {
 func newTCPStream(netFlow gopacket.Flow,
 	outChan chan<- gnet.NetTraffic, fs gnet.TCPParserFactorySelector) *tcpStream {
 	return &tcpStream{
-		bidiID:          gnet.TCPBidiID(uuid.New()),
+		bidiID:          uuid.New(),
 		netFlow:         netFlow,
 		factorySelector: fs,
 		outChan:         outChan,
@@ -274,7 +274,8 @@ func (c *tcpStream) Accept(tcp *layers.TCP, _ gopacket.CaptureInfo,
 		// from from the speculative flow will block until it receives reassembled
 		// data from this tcpStream or it is garbage collected by the assembler
 		// after streamTimeout.
-		tf, _ := gopacket.FlowFromEndpoints(layers.NewTCPPortEndpoint(tcp.SrcPort), layers.NewTCPPortEndpoint(tcp.DstPort))
+		tf, _ := gopacket.FlowFromEndpoints(layers.NewTCPPortEndpoint(tcp.SrcPort),
+			layers.NewTCPPortEndpoint(tcp.DstPort))
 		s1 := newTCPFlow(c.bidiID, c.netFlow, tf, c.outChan, c.factorySelector)
 		s2 := newTCPFlow(c.bidiID, c.netFlow.Reverse(), tf.Reverse(), c.outChan, c.factorySelector)
 		c.flows = map[reassembly.TCPFlowDirection]*tcpFlow{
@@ -288,17 +289,18 @@ func (c *tcpStream) Accept(tcp *layers.TCP, _ gopacket.CaptureInfo,
 		srcE, dstE := c.netFlow.Endpoints()
 
 		c.outChan <- gnet.NetTraffic{
-			SrcIP:   net.IP(srcE.Raw()),
-			SrcPort: int(tcp.SrcPort),
-			DstIP:   net.IP(dstE.Raw()),
-			DstPort: int(tcp.DstPort),
+			LayerType: "TCP",
+			SrcIP:     net.IP(srcE.Raw()),
+			SrcPort:   int(tcp.SrcPort),
+			DstIP:     net.IP(dstE.Raw()),
+			DstPort:   int(tcp.DstPort),
 			Content: gnet.TCPPacketMetadata{
-				ConnectionID:        gid.NewConnectionID(uuid.UUID(c.bidiID)),
-				SYN:                 tcp.SYN,
-				ACK:                 tcp.ACK,
-				FIN:                 tcp.FIN,
-				RST:                 tcp.RST,
-				PayloadLength_bytes: len(tcp.LayerPayload()),
+				ConnectionID: c.bidiID,
+				SYN:          tcp.SYN,
+				ACK:          tcp.ACK,
+				FIN:          tcp.FIN,
+				RST:          tcp.RST,
+				Payloads:     tcp.LayerPayload(),
 			},
 			ObservationTime: ac.GetCaptureInfo().Timestamp,
 		}

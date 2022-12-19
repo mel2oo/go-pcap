@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/google/gopacket/reassembly"
+	"github.com/google/uuid"
 	"github.com/mel2oo/go-pcap/gnet"
 	"github.com/mel2oo/go-pcap/mempool"
 	"github.com/mel2oo/go-pcap/memview"
@@ -65,7 +66,7 @@ func (httpRequestParserFactory) Accepts(input memview.MemView, isEnd bool) (deci
 	return gnet.Reject, input.Len()
 }
 
-func (f httpRequestParserFactory) CreateParser(id gnet.TCPBidiID, seq, ack reassembly.Sequence) gnet.TCPParser {
+func (f httpRequestParserFactory) CreateParser(id uuid.UUID, seq, ack reassembly.Sequence) gnet.TCPParser {
 	return newHTTPParser(true, id, seq, ack, f.bufferPool)
 }
 
@@ -102,7 +103,7 @@ func (httpResponseParserFactory) Accepts(input memview.MemView, isEnd bool) (dec
 	return gnet.Reject, input.Len()
 }
 
-func (f httpResponseParserFactory) CreateParser(id gnet.TCPBidiID, seq, ack reassembly.Sequence) gnet.TCPParser {
+func (f httpResponseParserFactory) CreateParser(id uuid.UUID, seq, ack reassembly.Sequence) gnet.TCPParser {
 	return newHTTPParser(false, id, seq, ack, f.bufferPool)
 }
 

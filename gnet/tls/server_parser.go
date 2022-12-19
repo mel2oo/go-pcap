@@ -5,20 +5,19 @@ import (
 	"io"
 
 	"github.com/google/uuid"
-	"github.com/mel2oo/go-pcap/gid"
 	"github.com/mel2oo/go-pcap/gnet"
 	"github.com/mel2oo/go-pcap/memview"
 	"github.com/pkg/errors"
 )
 
-func newTLSServerHelloParser(bidiID gnet.TCPBidiID) *tlsServerHelloParser {
+func newTLSServerHelloParser(bidiID uuid.UUID) *tlsServerHelloParser {
 	return &tlsServerHelloParser{
-		connectionID: gid.NewConnectionID(uuid.UUID(bidiID)),
+		connectionID: bidiID,
 	}
 }
 
 type tlsServerHelloParser struct {
-	connectionID gid.ConnectionID
+	connectionID uuid.UUID
 	allInput     memview.MemView
 }
 

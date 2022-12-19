@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 
-	"github.com/google/gopacket/layers"
 	"github.com/mel2oo/go-pcap/gnet"
 	ghttp "github.com/mel2oo/go-pcap/gnet/http"
 	"github.com/mel2oo/go-pcap/mempool"
@@ -18,7 +18,9 @@ func TestPcapParse(t *testing.T) {
 	}
 
 	traffic, err := NewTrafficParser(
-		WithReadName("../testdata/99e628ca-8160-4108-bb92-1bf38984331c.pcap", false),
+		WithReadName("../testdata/tcp.pcap", false),
+		WithStreamCloseTimeout(int64(time.Second)*300),
+		WithStreamFlushTimeout(int64(time.Second)*300),
 	)
 	if err != nil {
 		t.Error(err)
@@ -43,14 +45,17 @@ func TestPcapParse(t *testing.T) {
 			continue
 		}
 
-		// ignore ipv6
-		if c.LayerClass != nil {
-			c.LayerClass.LayerTypes()
-			if c.LayerClass.Contains(layers.LayerTypeIPv6) {
-				c.Content.ReleaseBuffers()
-				continue
-			}
+		if len(c.LayerType) == 0 {
+			continue
 		}
+
+		if c.LayerType == "UDP" {
+			continue
+		}
+
+		// if net.IsIPv6(c.SrcIP) {
+		// 	continue
+		// }
 
 		collected = append(collected, c)
 	}

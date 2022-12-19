@@ -2,6 +2,7 @@ package http2
 
 import (
 	"github.com/google/gopacket/reassembly"
+	"github.com/google/uuid"
 	"github.com/mel2oo/go-pcap/gnet"
 	"github.com/mel2oo/go-pcap/memview"
 )
@@ -68,7 +69,7 @@ type http2Sink struct {
 	totalBytesConsumed int64
 }
 
-func (http2PrefaceParserFactory) CreateParser(id gnet.TCPBidiID, seq, ack reassembly.Sequence) gnet.TCPParser {
+func (http2PrefaceParserFactory) CreateParser(id uuid.UUID, seq, ack reassembly.Sequence) gnet.TCPParser {
 	return &http2Sink{
 		firstInput: true,
 	}
