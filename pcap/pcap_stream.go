@@ -289,7 +289,7 @@ func (c *tcpStream) Accept(tcp *layers.TCP, _ gopacket.CaptureInfo,
 	}
 
 	// Output some metadata for the current packet.
-	{
+	if len(tcp.Payload) == 0 {
 		srcE, dstE := c.netFlow.Endpoints()
 
 		c.outChan <- gnet.NetTraffic{
@@ -298,7 +298,6 @@ func (c *tcpStream) Accept(tcp *layers.TCP, _ gopacket.CaptureInfo,
 			SrcPort:      int(tcp.SrcPort),
 			DstIP:        net.IP(dstE.Raw()),
 			DstPort:      int(tcp.DstPort),
-			Payload:      tcp.Payload,
 			ConnectionID: c.bidiID,
 			Content: gnet.TCPPacketMetadata{
 				SYN: tcp.SYN,

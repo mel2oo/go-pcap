@@ -37,7 +37,8 @@ func TestPcapParse(t *testing.T) {
 		t.Error(err)
 	}
 
-	collected := []gnet.NetTraffic{}
+	tcps := make(map[string][]gnet.NetTraffic)
+
 	for c := range out {
 		// Remove TCP metadata, which was added after this test was written.
 		// if _, ignore := c.Content.(gnet.TCPPacketMetadata); ignore {
@@ -45,26 +46,17 @@ func TestPcapParse(t *testing.T) {
 		// 	continue
 		// }
 
-		collected = append(collected, c)
-	}
+		if c.LayerType == "TCP" {
+			_, ok := tcps[c.ConnectionID.String()]
+			if !ok {
+				tcps[c.ConnectionID.String()] = make([]gnet.NetTraffic, 0)
+			}
 
-	size := 0
-	for _, c := range collected {
-		// if strings.Contains(c.Content.Print(), "HTTP") {
-		// 	size += 1
-		// }
-		if _, ok := c.Content.(gnet.HTTPRequest); ok {
-			size += 1
+			if len(c.Payload) > 0 {
+				tcps[c.ConnectionID.String()] = append(tcps[c.ConnectionID.String()], c)
+			}
 		}
-
-		// if _, ok := c.Content.(gnet.HTTPResponse); ok {
-		// 	size += 1
-		// }
-
-		// fmt.Printf("index:%d src: %s:%d -> des: %s:%d %s\n",
-		// 	index, c.SrcIP.String(), c.SrcPort,
-		// 	c.DstIP.String(), c.DstPort, c.Content.Print())
 	}
 
-	fmt.Println(size)
+	fmt.Println(tcps)
 }
