@@ -1,7 +1,6 @@
 package gnet
 
 import (
-	"fmt"
 	"net"
 	"net/http"
 	"net/url"
@@ -23,7 +22,15 @@ type NetTraffic struct {
 	SrcPort   int
 	DstIP     net.IP
 	DstPort   int
-	Content   ParsedNetworkContent
+
+	// origin data
+	Payload []byte
+
+	// parse data
+	Content ParsedNetworkContent
+
+	// stream id
+	ConnectionID uuid.UUID
 
 	// The time at which the first packet was observed
 	ObservationTime time.Time
@@ -38,22 +45,6 @@ type NetTraffic struct {
 // network.
 type ParsedNetworkContent interface {
 	ReleaseBuffers()
-	Print() string
-}
-
-// Content bytes.
-type BodyBytes struct {
-	memview.MemView
-}
-
-var _ ParsedNetworkContent = (*BodyBytes)(nil)
-
-func (b BodyBytes) ReleaseBuffers() {
-	b.MemView.Clear()
-}
-
-func (b BodyBytes) Print() string {
-	return ""
 }
 
 // Content bytes length.
@@ -62,17 +53,9 @@ type DroppedBytes int64
 var _ ParsedNetworkContent = (*DroppedBytes)(nil)
 
 func (DroppedBytes) ReleaseBuffers() {}
-func (DroppedBytes) Print() string   { return "" }
-
-func (db DroppedBytes) String() string {
-	return fmt.Sprintf("dropped %d bytes", db)
-}
 
 // Represents metadata from an observed TCP packet.
 type TCPPacketMetadata struct {
-	// Uniquely identifies a TCP connection.
-	ConnectionID uuid.UUID
-
 	// Whether the SYN flag was set in the observed packet.
 	SYN bool
 
@@ -84,15 +67,11 @@ type TCPPacketMetadata struct {
 
 	// Whstring   {}ether the RST flag was set in the observed packet.
 	RST bool
-
-	// The size of the TCP payload.
-	Payloads []byte
 }
 
 var _ ParsedNetworkContent = (*TCPPacketMetadata)(nil)
 
 func (TCPPacketMetadata) ReleaseBuffers() {}
-func (TCPPacketMetadata) Print() string   { return "" }
 
 // Represents metadata from an observed TCP connection.
 type TCPConnectionMetadata struct {
@@ -109,7 +88,6 @@ type TCPConnectionMetadata struct {
 var _ ParsedNetworkContent = (*TCPConnectionMetadata)(nil)
 
 func (TCPConnectionMetadata) ReleaseBuffers() {}
-func (TCPConnectionMetadata) Print() string   { return "" }
 
 // Identifies which of the two endpoints of a connection initiated that
 // connection.
@@ -167,21 +145,6 @@ type DNSRequest struct {
 var _ ParsedNetworkContent = (*DNSRequest)(nil)
 
 func (DNSRequest) ReleaseBuffers() {}
-func (d DNSRequest) Print() (str string) {
-	if !d.QR {
-		str = fmt.Sprintf("## DNS -> %d Questions:", d.ID)
-		for _, q := range d.Questions {
-			str = fmt.Sprintf("%s [%s]", str, string(q.Name))
-		}
-	} else {
-		str = fmt.Sprintf("## DNS <- %d Answers:", d.ID)
-		for _, a := range d.Answers {
-			str = fmt.Sprintf("%s [%s <%s>]",
-				str, string(a.Name), a.IP.String())
-		}
-	}
-	return str
-}
 
 type HTTPRequest struct {
 	// StreamID and Seq uniquely identify a pair of request and response.
@@ -205,10 +168,6 @@ type HTTPRequest struct {
 var _ ParsedNetworkContent = (*HTTPRequest)(nil)
 
 func (r HTTPRequest) ReleaseBuffers() { r.buffer.Release() }
-func (r HTTPRequest) Print() string {
-	return fmt.Sprintf("## HTTP -> Request: %s %s %s",
-		r.StreamID.String(), r.Method, r.URL.String())
-}
 
 // Returns a string key that associates this request with its corresponding
 // response.
@@ -236,10 +195,6 @@ type HTTPResponse struct {
 var _ ParsedNetworkContent = (*HTTPResponse)(nil)
 
 func (r HTTPResponse) ReleaseBuffers() { r.buffer.Release() }
-func (r HTTPResponse) Print() string {
-	return fmt.Sprintf("## HTTP -> Response: %s",
-		r.StreamID.String())
-}
 
 // Returns a string key that associates this response with its corresponding
 // request.
@@ -263,7 +218,6 @@ type TLSClientHello struct {
 var _ ParsedNetworkContent = (*TLSClientHello)(nil)
 
 func (TLSClientHello) ReleaseBuffers() {}
-func (TLSClientHello) Print() string   { return "" }
 
 // Represents metadata from an observed TLS 1.2 or 1.3 Server Hello message.
 type TLSServerHello struct {
@@ -286,7 +240,6 @@ type TLSServerHello struct {
 var _ ParsedNetworkContent = (*TLSServerHello)(nil)
 
 func (TLSServerHello) ReleaseBuffers() {}
-func (TLSServerHello) Print() string   { return "" }
 
 // Metadata from an observed TLS handshake.
 type TLSHandshakeMetadata struct {
@@ -318,7 +271,6 @@ type TLSHandshakeMetadata struct {
 var _ ParsedNetworkContent = (*TLSHandshakeMetadata)(nil)
 
 func (TLSHandshakeMetadata) ReleaseBuffers() {}
-func (TLSHandshakeMetadata) Print() string   { return "" }
 
 func (tls *TLSHandshakeMetadata) HandshakeComplete() bool {
 	return tls.clientHandshakeSeen && tls.serverHandshakeSeen
@@ -433,7 +385,6 @@ type HTTP2ConnectionPreface struct {
 }
 
 func (HTTP2ConnectionPreface) ReleaseBuffers() {}
-func (HTTP2ConnectionPreface) Print() string   { return "" }
 
 // Represents an observed QUIC handshake (initial packet).
 // Currently empty because we're only interested in the presence
@@ -442,4 +393,3 @@ type QUICHandshakeMetadata struct {
 }
 
 func (QUICHandshakeMetadata) ReleaseBuffers() {}
-func (QUICHandshakeMetadata) Print() string   { return "" }

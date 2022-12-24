@@ -294,6 +294,12 @@ func (mv MemView) String() string {
 	return buf.String()
 }
 
+func (mv MemView) Bytes() []byte {
+	var buf bytes.Buffer
+	io.Copy(&buf, mv.CreateReader())
+	return buf.Bytes()
+}
+
 type MemViewReader struct {
 	mv *MemView
 

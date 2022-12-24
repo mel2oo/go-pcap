@@ -18,7 +18,7 @@ func TestPcapParse(t *testing.T) {
 	}
 
 	traffic, err := NewTrafficParser(
-		WithReadName("../testdata/tcp.pcap", false),
+		WithReadName("../testdata/con2dns1.pcap", false),
 		WithStreamCloseTimeout(int64(time.Second)*300),
 		WithStreamFlushTimeout(int64(time.Second)*300),
 	)
@@ -40,20 +40,8 @@ func TestPcapParse(t *testing.T) {
 	collected := []gnet.NetTraffic{}
 	for c := range out {
 		// Remove TCP metadata, which was added after this test was written.
-		if _, ignore := c.Content.(gnet.TCPPacketMetadata); ignore {
-			c.Content.ReleaseBuffers()
-			continue
-		}
-
-		if len(c.LayerType) == 0 {
-			continue
-		}
-
-		if c.LayerType == "UDP" {
-			continue
-		}
-
-		// if net.IsIPv6(c.SrcIP) {
+		// if _, ignore := c.Content.(gnet.TCPPacketMetadata); ignore {
+		// 	c.Content.ReleaseBuffers()
 		// 	continue
 		// }
 

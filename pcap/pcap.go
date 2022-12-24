@@ -10,7 +10,6 @@ import (
 	"github.com/google/gopacket/layers"
 	"github.com/google/gopacket/reassembly"
 	"github.com/mel2oo/go-pcap/gnet"
-	"github.com/mel2oo/go-pcap/memview"
 )
 
 type TrafficParser struct {
@@ -154,20 +153,16 @@ func (p *TrafficParser) PacketToNetTraffic(assembler *reassembly.Assembler, pack
 	traffic := &gnet.NetTraffic{
 		ObservationTime: observationTime,
 	}
-	if PacketToTraffic(assembler, packet, traffic); traffic.Content != nil {
-		p.outchan <- *traffic
-	}
-}
 
-func PacketToTraffic(assembler *reassembly.Assembler, packet gopacket.Packet, traffic *gnet.NetTraffic) {
-	NetLayerToTraffic(assembler, packet, traffic)
-}
-
-func NetLayerToTraffic(assembler *reassembly.Assembler, packet gopacket.Packet, traffic *gnet.NetTraffic) {
 	if packet.NetworkLayer() == nil {
 		return
 	}
 
+	ParseNetTraffic(assembler, packet, traffic, p.outchan)
+}
+
+func ParseNetTraffic(assembler *reassembly.Assembler, packet gopacket.Packet,
+	traffic *gnet.NetTraffic, outchan chan gnet.NetTraffic) {
 	switch layer := packet.NetworkLayer().(type) {
 	case *layers.IPv4:
 		traffic.SrcIP = layer.SrcIP
@@ -177,14 +172,11 @@ func NetLayerToTraffic(assembler *reassembly.Assembler, packet gopacket.Packet, 
 		traffic.DstIP = layer.DstIP
 	}
 
-	TransLayerToTraffic(assembler, packet, traffic)
+	TransLayerToTraffic(assembler, packet, traffic, outchan)
 }
 
-func TransLayerToTraffic(assembler *reassembly.Assembler, packet gopacket.Packet, traffic *gnet.NetTraffic) {
-	if packet.TransportLayer() != nil {
-		traffic.LayerType = packet.TransportLayer().LayerType().String()
-	}
-
+func TransLayerToTraffic(assembler *reassembly.Assembler, packet gopacket.Packet,
+	traffic *gnet.NetTraffic, outchan chan gnet.NetTraffic) {
 	switch layer := packet.TransportLayer().(type) {
 	case *layers.TCP:
 		assembler.AssembleWithContext(
@@ -192,15 +184,25 @@ func TransLayerToTraffic(assembler *reassembly.Assembler, packet gopacket.Packet
 			layer,
 			contextFromTCPPacket(packet, layer),
 		)
+		return
 
 	case *layers.UDP:
+		traffic.LayerType = packet.TransportLayer().LayerType().String()
+		traffic.Payload = layer.LayerPayload()
+
 		UdpLayerToTraffic(packet, traffic)
 
 	default:
-		traffic.Content = gnet.BodyBytes{
-			MemView: memview.New(packet.NetworkLayer().LayerPayload()),
+		traffic.Payload = packet.NetworkLayer().LayerPayload()
+
+		if packet.Layer(layers.LayerTypeICMPv4) != nil {
+			traffic.LayerType = layers.LayerTypeICMPv4.String()
+		} else if packet.Layer(layers.LayerTypeICMPv6) != nil {
+			traffic.LayerType = layers.LayerTypeICMPv6.String()
 		}
 	}
+
+	outchan <- *traffic
 }
 
 func UdpLayerToTraffic(packet gopacket.Packet, traffic *gnet.NetTraffic) {
@@ -231,10 +233,6 @@ func UdpLayerToTraffic(packet gopacket.Packet, traffic *gnet.NetTraffic) {
 			Answers:     l.Answers,
 			Authorities: l.Authorities,
 			Additionals: l.Additionals,
-		}
-	default:
-		traffic.Content = gnet.BodyBytes{
-			MemView: memview.New(packet.TransportLayer().LayerPayload()),
 		}
 	}
 }

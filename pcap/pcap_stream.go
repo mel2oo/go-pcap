@@ -2,7 +2,6 @@ package pcap
 
 import (
 	"encoding/binary"
-	"fmt"
 	"net"
 	"sync/atomic"
 	"time"
@@ -69,9 +68,9 @@ func newTCPFlow(bidiID uuid.UUID, nf, tf gopacket.Flow,
 	}
 }
 
-func (f *tcpFlow) handleUnparseable(t time.Time, size int64) {
-	if size > 0 {
-		f.outChan <- f.toPNT(t, t, gnet.DroppedBytes(size))
+func (f *tcpFlow) handleUnparseable(t time.Time, data []byte) {
+	if len(data) > 0 {
+		f.outChan <- f.toPNT(t, t, gnet.DroppedBytes(len(data)), data)
 	}
 }
 
@@ -92,7 +91,7 @@ func (f *tcpFlow) reassembledWithIgnore(ignoreCount int, sg reassembly.ScatterGa
 		// Try to create a new parser.
 		fact, decision, discardFront := f.factorySelector.Select(pktData, isEnd)
 		if discardFront > 0 {
-			f.handleUnparseable(sg.CaptureInfo(ignoreCount).Timestamp, discardFront)
+			f.handleUnparseable(sg.CaptureInfo(ignoreCount).Timestamp, pktData.Bytes())
 			pktData = pktData.SubView(discardFront, pktData.Len())
 		}
 
@@ -121,23 +120,23 @@ func (f *tcpFlow) reassembledWithIgnore(ignoreCount int, sg reassembly.ScatterGa
 				} else {
 					atomic.AddUint64(&CountBadAssemblerContextType, 1)
 				}
-				f.handleUnparseable(sg.CaptureInfo(ignoreCount).Timestamp, pktData.Len())
+				f.handleUnparseable(sg.CaptureInfo(ignoreCount).Timestamp, pktData.Bytes())
 				return
 			}
 			f.currentParser = fact.CreateParser(f.bidiID, ctx.seq, ctx.ack)
 			f.currentParserCtx = ctx
 		default:
-			f.handleUnparseable(sg.CaptureInfo(ignoreCount).Timestamp, pktData.Len())
+			f.handleUnparseable(sg.CaptureInfo(ignoreCount).Timestamp, pktData.Bytes())
 			return
 		}
 	}
 
-	pnc, unused, numBytesConsumed, err := f.currentParser.Parse(pktData, isEnd)
+	pnc, unused, _, err := f.currentParser.Parse(pktData, isEnd)
 	if err != nil {
 		// Parser failed, return all the bytes passed to the parser so at least we
 		// can still perform leak detection on the raw bytes.
 		t := f.currentParserCtx.GetCaptureInfo().Timestamp
-		f.handleUnparseable(t, numBytesConsumed)
+		f.handleUnparseable(t, pktData.Bytes())
 
 		f.currentParser = nil
 		f.currentParserCtx = nil
@@ -155,7 +154,7 @@ func (f *tcpFlow) reassembledWithIgnore(ignoreCount int, sg reassembly.ScatterGa
 			atomic.AddUint64(&CountNilAssemblerContextAfterParse, 1)
 			parseEnd = parseStart
 		}
-		f.outChan <- f.toPNT(parseStart, parseEnd, pnc)
+		f.outChan <- f.toPNT(parseStart, parseEnd, pnc, pktData.Bytes())
 
 		f.currentParser = nil
 		f.currentParserCtx = nil
@@ -185,13 +184,13 @@ func (f *tcpFlow) reassembledWithIgnore(ignoreCount int, sg reassembly.ScatterGa
 func (f *tcpFlow) reassemblyComplete() {
 	if f.currentParser != nil {
 		// We were in the middle of parsing something, give up.
-		pnc, unused, numBytesConsumed, err := f.currentParser.Parse(memview.New(nil), true)
+		pnc, unused, _, err := f.currentParser.Parse(memview.New(nil), true)
 		t := f.currentParserCtx.GetCaptureInfo().Timestamp
 		if err != nil {
-			f.handleUnparseable(t, numBytesConsumed)
+			f.handleUnparseable(t, unused.Bytes())
 		} else if pnc != nil {
-			f.outChan <- f.toPNT(t, t, pnc)
-			f.handleUnparseable(t, unused.Len())
+			f.outChan <- f.toPNT(t, t, pnc, unused.Bytes())
+			f.handleUnparseable(t, unused.Bytes())
 		}
 		f.currentParser = nil
 		f.currentParserCtx = nil
@@ -201,12 +200,13 @@ func (f *tcpFlow) reassemblyComplete() {
 		// We estimate the time with current time instead of tracking a separate
 		// context since unusedAcceptBuf is unlikely to be used and is almost
 		// certainly very small in size.
-		f.outChan <- f.toPNT(time.Now(), time.Now(), gnet.DroppedBytes(f.unusedAcceptBuf.Len()))
+		f.outChan <- f.toPNT(time.Now(), time.Now(),
+			gnet.DroppedBytes(f.unusedAcceptBuf.Len()), f.unusedAcceptBuf.Bytes())
 	}
 }
 
 func (f *tcpFlow) toPNT(firstPacketTime time.Time, lastPacketTime time.Time,
-	c gnet.ParsedNetworkContent) gnet.NetTraffic {
+	c gnet.ParsedNetworkContent, payload []byte) gnet.NetTraffic {
 	if firstPacketTime.IsZero() {
 		firstPacketTime = time.Now()
 	}
@@ -225,7 +225,9 @@ func (f *tcpFlow) toPNT(firstPacketTime time.Time, lastPacketTime time.Time,
 		SrcPort:         int(binary.BigEndian.Uint16(srcP.Raw())),
 		DstIP:           net.IP(dstE.Raw()),
 		DstPort:         int(binary.BigEndian.Uint16(dstP.Raw())),
+		Payload:         payload,
 		Content:         c,
+		ConnectionID:    f.bidiID,
 		ObservationTime: firstPacketTime,
 		FinalPacketTime: lastPacketTime,
 	}
@@ -274,8 +276,10 @@ func (c *tcpStream) Accept(tcp *layers.TCP, _ gopacket.CaptureInfo,
 		// from from the speculative flow will block until it receives reassembled
 		// data from this tcpStream or it is garbage collected by the assembler
 		// after streamTimeout.
-		tf, _ := gopacket.FlowFromEndpoints(layers.NewTCPPortEndpoint(tcp.SrcPort),
-			layers.NewTCPPortEndpoint(tcp.DstPort))
+		tf, _ := gopacket.FlowFromEndpoints(
+			layers.NewTCPPortEndpoint(tcp.SrcPort),
+			layers.NewTCPPortEndpoint(tcp.DstPort),
+		)
 		s1 := newTCPFlow(c.bidiID, c.netFlow, tf, c.outChan, c.factorySelector)
 		s2 := newTCPFlow(c.bidiID, c.netFlow.Reverse(), tf.Reverse(), c.outChan, c.factorySelector)
 		c.flows = map[reassembly.TCPFlowDirection]*tcpFlow{
@@ -289,18 +293,18 @@ func (c *tcpStream) Accept(tcp *layers.TCP, _ gopacket.CaptureInfo,
 		srcE, dstE := c.netFlow.Endpoints()
 
 		c.outChan <- gnet.NetTraffic{
-			LayerType: "TCP",
-			SrcIP:     net.IP(srcE.Raw()),
-			SrcPort:   int(tcp.SrcPort),
-			DstIP:     net.IP(dstE.Raw()),
-			DstPort:   int(tcp.DstPort),
+			LayerType:    "TCP",
+			SrcIP:        net.IP(srcE.Raw()),
+			SrcPort:      int(tcp.SrcPort),
+			DstIP:        net.IP(dstE.Raw()),
+			DstPort:      int(tcp.DstPort),
+			Payload:      tcp.Payload,
+			ConnectionID: c.bidiID,
 			Content: gnet.TCPPacketMetadata{
-				ConnectionID: c.bidiID,
-				SYN:          tcp.SYN,
-				ACK:          tcp.ACK,
-				FIN:          tcp.FIN,
-				RST:          tcp.RST,
-				Payloads:     tcp.LayerPayload(),
+				SYN: tcp.SYN,
+				ACK: tcp.ACK,
+				FIN: tcp.FIN,
+				RST: tcp.RST,
 			},
 			ObservationTime: ac.GetCaptureInfo().Timestamp,
 		}
@@ -318,7 +322,6 @@ func (c *tcpStream) Accept(tcp *layers.TCP, _ gopacket.CaptureInfo,
 // Handles reassmbled TCP stream data.
 func (c *tcpStream) ReassembledSG(sg reassembly.ScatterGather, ac reassembly.AssemblerContext) {
 	if c.flows == nil {
-		fmt.Printf("received reassembled TCP stream data before accept, dropping packets\n")
 		return
 	}
 	dir, _, _, _ := sg.Info()
