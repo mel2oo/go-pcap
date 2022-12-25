@@ -289,24 +289,22 @@ func (c *tcpStream) Accept(tcp *layers.TCP, _ gopacket.CaptureInfo,
 	}
 
 	// Output some metadata for the current packet.
-	if len(tcp.Payload) == 0 {
-		srcE, dstE := c.netFlow.Endpoints()
+	srcE, dstE := c.netFlow.Endpoints()
 
-		c.outChan <- gnet.NetTraffic{
-			LayerType:    "TCP",
-			SrcIP:        net.IP(srcE.Raw()),
-			SrcPort:      int(tcp.SrcPort),
-			DstIP:        net.IP(dstE.Raw()),
-			DstPort:      int(tcp.DstPort),
-			ConnectionID: c.bidiID,
-			Content: gnet.TCPPacketMetadata{
-				SYN: tcp.SYN,
-				ACK: tcp.ACK,
-				FIN: tcp.FIN,
-				RST: tcp.RST,
-			},
-			ObservationTime: ac.GetCaptureInfo().Timestamp,
-		}
+	c.outChan <- gnet.NetTraffic{
+		LayerType:    "TCP",
+		SrcIP:        net.IP(srcE.Raw()),
+		SrcPort:      int(tcp.SrcPort),
+		DstIP:        net.IP(dstE.Raw()),
+		DstPort:      int(tcp.DstPort),
+		ConnectionID: c.bidiID,
+		Content: gnet.TCPPacketMetadata{
+			SYN: tcp.SYN,
+			ACK: tcp.ACK,
+			FIN: tcp.FIN,
+			RST: tcp.RST,
+		},
+		ObservationTime: ac.GetCaptureInfo().Timestamp,
 	}
 
 	// Accept everything, even if the packet might violate the TCP state machine
