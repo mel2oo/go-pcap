@@ -18,7 +18,7 @@ func TestPcapParse(t *testing.T) {
 	}
 
 	traffic, err := NewTrafficParser(
-		WithReadName("../testdata/con2dns1.pcap", false),
+		WithReadName("../testdata/http2con7.pcap", false),
 		WithStreamCloseTimeout(int64(time.Second)*300),
 		WithStreamFlushTimeout(int64(time.Second)*300),
 	)
@@ -65,6 +65,15 @@ func TestPcapParse(t *testing.T) {
 		} else if c.LayerType == "DNS" {
 			dnss = append(dnss, c)
 		}
+	}
+
+	for _, h := range http {
+		r, ok := h.Content.(gnet.HTTPRequest)
+		if !ok {
+			continue
+		}
+
+		fmt.Println("url:", r.URL.String())
 	}
 
 	fmt.Println(tcps)

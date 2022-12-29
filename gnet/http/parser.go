@@ -194,6 +194,9 @@ func readSingleHTTPRequest(r *bufio.Reader, body mempool.Buffer) (*http.Request,
 		return nil, err
 	}
 
+	req.URL.Scheme = "http"
+	req.URL.Host = req.Host
+
 	if req.Body == nil {
 		return req, nil
 	}
