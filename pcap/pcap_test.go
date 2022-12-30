@@ -18,7 +18,7 @@ func TestPcapParse(t *testing.T) {
 	}
 
 	traffic, err := NewTrafficParser(
-		WithReadName("../testdata/http2con7.pcap", false),
+		WithReadName("../testdata/dump.pcap", false),
 		WithStreamCloseTimeout(int64(time.Second)*300),
 		WithStreamFlushTimeout(int64(time.Second)*300),
 	)
@@ -64,6 +64,8 @@ func TestPcapParse(t *testing.T) {
 
 		} else if c.LayerType == "DNS" {
 			dnss = append(dnss, c)
+		} else if c.LayerType == "ICMPv4" {
+			fmt.Println()
 		}
 	}
 

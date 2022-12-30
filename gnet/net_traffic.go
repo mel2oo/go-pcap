@@ -379,6 +379,15 @@ func (tls *TLSHandshakeMetadata) ApplicationLatencyMeasurable() bool {
 	return *tls.SelectedProtocol == "http/1.1"
 }
 
+type ICMPv4 struct {
+	TypeCode layers.ICMPv4TypeCode
+	Checksum uint16
+	Id       uint16
+	Seq      uint16
+}
+
+func (ICMPv4) ReleaseBuffers() {}
+
 // Represents an observed HTTP/2 connection preface; no data from it
 // is stored.
 type HTTP2ConnectionPreface struct {

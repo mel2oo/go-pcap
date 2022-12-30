@@ -194,8 +194,17 @@ func TransLayerToTraffic(assembler *reassembly.Assembler, packet gopacket.Packet
 	default:
 		traffic.Payload = packet.NetworkLayer().LayerPayload()
 
-		if packet.Layer(layers.LayerTypeICMPv4) != nil {
+		if icmplayer := packet.Layer(layers.LayerTypeICMPv4); icmplayer != nil {
 			traffic.LayerType = layers.LayerTypeICMPv4.String()
+			icmp, ok := icmplayer.(*layers.ICMPv4)
+			if ok {
+				traffic.Content = gnet.ICMPv4{
+					TypeCode: icmp.TypeCode,
+					Checksum: icmp.Checksum,
+					Id:       icmp.Id,
+					Seq:      icmp.Seq,
+				}
+			}
 		} else if packet.Layer(layers.LayerTypeICMPv6) != nil {
 			traffic.LayerType = layers.LayerTypeICMPv6.String()
 		}
