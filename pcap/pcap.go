@@ -3,7 +3,6 @@ package pcap
 import (
 	"context"
 	"errors"
-	"fmt"
 	"time"
 
 	"github.com/google/gopacket"
@@ -123,7 +122,7 @@ func (p *TrafficParser) Parse(ctx context.Context,
 					})
 
 				if flushed != 0 || closed != 0 {
-					fmt.Printf("%d flushed, %d closed\n", flushed, closed)
+					continue
 				}
 			}
 		}
@@ -138,7 +137,7 @@ func (p *TrafficParser) PacketToNetTraffic(assembler *reassembly.Assembler, pack
 		// We can perform selective error-handling based on the type of the object passed to panic(),
 		// but we can't choose not to recover from certain errors; we would have to re-panic.
 		if err := recover(); err != nil {
-			fmt.Println("packet handling", err)
+			return
 		}
 	}()
 

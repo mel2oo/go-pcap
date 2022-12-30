@@ -1,8 +1,6 @@
 package http
 
 import (
-	"fmt"
-
 	"github.com/google/gopacket/reassembly"
 	"github.com/google/uuid"
 	"github.com/mel2oo/go-pcap/gnet"
@@ -116,7 +114,6 @@ func hasValidHTTPRequestLine(input memview.MemView) gnet.AcceptDecision {
 
 	// A space separates the HTTP method from Request-URI.
 	if input.GetByte(0) != ' ' {
-		fmt.Println("rejecting HTTP request: lack of space between HTTP method and request-URI")
 		return gnet.Reject
 	}
 
@@ -124,12 +121,10 @@ func hasValidHTTPRequestLine(input memview.MemView) gnet.AcceptDecision {
 	if nextSP < 0 {
 		// Could be dealing with a very long request URI.
 		if input.Len()-1 > maxHTTPRequestURILength {
-			fmt.Println("rejecting potential HTTP request with request URI longer than", maxHTTPRequestURILength)
 			return gnet.Reject
 		}
 		return gnet.NeedMoreData
 	} else if nextSP == 1 {
-		fmt.Println("rejecting HTTP request: two spaces after HTTP method")
 		return gnet.Reject
 	}
 
@@ -142,7 +137,7 @@ func hasValidHTTPRequestLine(input memview.MemView) gnet.AcceptDecision {
 	if tail.Index(0, []byte("HTTP/1.1\r\n")) == 0 || tail.Index(0, []byte("HTTP/1.0\r\n")) == 0 {
 		return gnet.Accept
 	}
-	fmt.Println("rejecting HTTP request: request line does not end with HTTP version")
+
 	return gnet.Reject
 }
 
@@ -169,7 +164,6 @@ func hasValidHTTPResponseStatusLine(input memview.MemView) gnet.AcceptDecision {
 	if input.Index(0, []byte("\r\n")) < 0 {
 		// Could be dealing with a very long reason phrase.
 		if input.Len()-4 > maxHTTPReasonPhraseLength {
-			fmt.Println("rejecting potential HTTP response with reason phrase longer than", maxHTTPReasonPhraseLength)
 			return gnet.Reject
 		}
 		return gnet.NeedMoreData
