@@ -1,15 +1,10 @@
 package gnet
 
-type TLSVersion string
+const TLSV1_2 TLSVersion = 0x0303
 
-const (
-	TLS_v1_2 TLSVersion = "1.2"
-	TLS_v1_3 TLSVersion = "1.3"
-)
+type TLSVersion uint16
 
-type TLSHandshakeVersion uint16
-
-func (v TLSHandshakeVersion) String() string {
+func (v TLSVersion) String() string {
 	switch v {
 	case 0x0300:
 		return "SSLv3"

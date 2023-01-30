@@ -1,7 +1,6 @@
 package tls
 
 import (
-	"crypto/x509"
 	"io"
 
 	"github.com/google/uuid"
@@ -87,7 +86,7 @@ func (parser *tlsServerHelloParser) parse(input memview.MemView) (result gnet.Pa
 	if err != nil {
 		return nil, 0, err
 	}
-	hello.HandshakeVersion = gnet.TLSHandshakeVersion(v)
+	hello.Version = gnet.TLSVersion(v)
 
 	// seek random
 	_, err = reader.Seek(clientRandomLength_bytes, io.SeekCurrent)
@@ -120,10 +119,6 @@ func (parser *tlsServerHelloParser) parse(input memview.MemView) (result gnet.Pa
 		return nil, 0, errors.New("malformed TLS message")
 	}
 
-	selectedVersion := gnet.TLS_v1_2
-	selectedProtocol := (*string)(nil)
-	dnsNames := ([]string)(nil)
-
 	for {
 		// The first two bytes of the extension give the extension type.
 		var extensionType tlsExtensionID
@@ -139,161 +134,12 @@ func (parser *tlsServerHelloParser) parse(input memview.MemView) (result gnet.Pa
 		}
 		// append extensions
 		hello.Extensions = append(hello.Extensions, uint16(extensionType))
-
-		// The following two bytes give the extension's content length in bytes.
-		// Isolate the extension in its own reader.
-		extensionContentLength_bytes, extensionReader, err := reader.ReadUint16AndTruncate()
+		// seek extension
+		reader.ReadUint16AndSeek()
 		if err != nil {
 			return nil, 0, err
 		}
-
-		// Seek past the extension in the main reader.
-		_, err = reader.Seek(int64(extensionContentLength_bytes), io.SeekCurrent)
-		if err != nil {
-			return nil, 0, err
-		}
-
-		switch extensionType {
-		case supportedVersionsTLSExtensionID:
-			version, err := parser.parseSupportedVersionsExtension(extensionReader)
-			if err == nil {
-				selectedVersion = version
-			}
-
-		case alpnExtensionID:
-			protocol, err := parser.parseALPNExtension(extensionReader)
-			if err == nil {
-				selectedProtocol = &protocol
-			}
-		}
 	}
-
-	if selectedVersion == gnet.TLS_v1_2 {
-		// We have TLS 1.2. There should be a second TLS record with a handshake
-		// message containing the server's certificate. Get the certificate's CN and
-		// SANs.
-
-		// Get a view of the bytes after the first handshake message.
-		buf := parser.allInput.SubView(handshakeMsgEndPos, parser.allInput.Len())
-
-		// Wait until we have at least the header for the second TLS record.
-		if buf.Len() < tlsRecordHeaderLength_bytes {
-			return nil, 0, nil
-		}
-
-		// Expect the first three bytes to be as follows:
-		//   0x16 - handshake record
-		//   0x0303 - protocol version 3.3 (TLS 1.2)
-		for idx, expectedByte := range []byte{0x16, 0x03, 0x03} {
-			if buf.GetByte(int64(idx)) != expectedByte {
-				return nil, 0, errors.New("expected a TLS message containing the server's certificate, but found a malformed TLS record")
-			}
-		}
-
-		// The last two bytes of the record header give the total length of the
-		// handshake message that appears after the record header.
-		handshakeMsgLen_bytes := buf.GetUint16(tlsRecordHeaderLength_bytes - 2)
-		handshakeMsgEndPos = int64(tlsRecordHeaderLength_bytes + handshakeMsgLen_bytes)
-
-		// Wait until we have the full handshake record.
-		if buf.Len() < handshakeMsgEndPos {
-			return nil, 0, nil
-		}
-
-		// Get a Memview of the handshake record.
-		buf = buf.SubView(tlsRecordHeaderLength_bytes, handshakeMsgEndPos)
-		reader := buf.CreateReader()
-
-		// The first byte of the handshake message gives its type. Expect a
-		// certificate handshake message (type 0x0b).
-		messageType, err := reader.ReadByte()
-		if err != nil {
-			return nil, 0, errors.New("expected a TLS message containing the server's certificate, but found a malformed handshake message")
-		}
-		if messageType != 0x0b {
-			return nil, 0, errors.Errorf("expected a TLS certificate handshake message (type 13) containing the server's certificate, but found a type %d handshake message", messageType)
-		}
-
-		// The next three bytes gives the length of the certificate message. Isolate
-		// the certificate message in the reader.
-		_, reader, err = reader.ReadUint24AndTruncate()
-		if err != nil {
-			return nil, 0, errors.New("expected a TLS message containing the server's certificate, but found a malformed certificate handshake message")
-		}
-
-		// The next three bytes gives the length of the certificate data that
-		// follows. Isolate the certificate data in the reader.
-		_, reader, err = reader.ReadUint24AndTruncate()
-		if err != nil {
-			return nil, 0, errors.New("expected a TLS message containing the server's certificate, but found a malformed certificate handshake message")
-		}
-
-		// The first certificate is the one that was issued to the server, so we
-		// only need to look at that.
-
-		// The next three bytes gives the length of the first certificate.
-		var certLen_bytes int64
-		{
-			val, err := reader.ReadUint24()
-			if err != nil {
-				return nil, 0, errors.New("expected a TLS message containing the server's certificate, but found a malformed certificate handshake message")
-			}
-			certLen_bytes = int64(val)
-		}
-
-		// Extract the first certificate.
-		certBytes := make([]byte, certLen_bytes)
-		read, err := reader.Read(certBytes)
-		if read != int(certLen_bytes) || err != nil {
-			return nil, 0, errors.New("expected a TLS message containing the server's certificate, but found a malformed certificate handshake message")
-		}
-
-		var cert *x509.Certificate
-		cert, err = x509.ParseCertificate(certBytes)
-		if err != nil {
-			return nil, 0, errors.Wrap(err, "error parsing server certificate")
-		}
-
-		dnsNames = cert.DNSNames
-	}
-
-	hello.Version = selectedVersion
-	hello.SelectedProtocol = selectedProtocol
-	hello.DNSNames = dnsNames
 
 	return hello, handshakeMsgEndPos, nil
-}
-
-// Extracts the server-selected TLS version from a buffer containing a TLS
-// Supported Versions extension.
-func (*tlsServerHelloParser) parseSupportedVersionsExtension(reader *memview.MemViewReader) (selectedVersion gnet.TLSVersion, err error) {
-	selected, err := reader.ReadUint16()
-	if err != nil {
-		return "", errors.New("malformed Supported Versions extension")
-	}
-
-	if result, exists := tlsVersionMap[selected]; exists {
-		return result, nil
-	}
-
-	return "", errors.Errorf("unknown TLS version selected: %d", selected)
-}
-
-// Extracts the server-selected application-layer protocol from a buffer
-// containing a TLS ALPN extension.
-func (*tlsServerHelloParser) parseALPNExtension(reader *memview.MemViewReader) (string, error) {
-	// The first two bytes give the length of the rest of the ALPN extension.
-	// Isolate the rest of the extension in the reader.
-	_, reader, err := reader.ReadUint16AndTruncate()
-	if err != nil {
-		return "", errors.New("malformed ALPN extension")
-	}
-
-	// The next byte gives the length of the string indicating the selected
-	// protocol.
-	alpn, err := reader.ReadString_byte()
-	if err != nil {
-		return "", errors.New("malformed ALPN extension")
-	}
-	return alpn, nil
 }
