@@ -127,7 +127,6 @@ func TestTLS(t *testing.T) {
 			if ok1 || ok2 {
 				tlss = append(tlss, c)
 			}
-
 		}
 	}
 
@@ -135,12 +134,12 @@ func TestTLS(t *testing.T) {
 		switch ch := t.Content.(type) {
 		case gnet.TLSClientHello:
 			fin, md5 := ja3.GetJa3Hash(ch)
-			fmt.Printf("client: %s md5:%s\n", fin, md5)
-			fmt.Printf("src:%s dst:%s\n", t.SrcIP.String(), t.DstIP.String())
+			fmt.Printf("client id:%s src:%s dst:%s ja3:%s md5:%s\n",
+				t.ConnectionID.String(), t.SrcIP.String(), t.DstIP.String(), fin, md5)
 		case gnet.TLSServerHello:
 			fin, md5 := ja3.GetJa3SHash(ch)
-			fmt.Printf("server: %s md5:%s\n", fin, md5)
-			fmt.Printf("src:%s dst:%s\n", t.SrcIP.String(), t.DstIP.String())
+			fmt.Printf("server id:%s src:%s dst:%s ja3s:%s md5:%s\n",
+				t.ConnectionID.String(), t.SrcIP.String(), t.DstIP.String(), fin, md5)
 		}
 	}
 }

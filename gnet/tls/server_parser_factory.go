@@ -32,7 +32,7 @@ func (factory *tlsServerParserFactory) Accepts(input memview.MemView, isEnd bool
 var serverHelloHandshakeBytes = []byte{
 	// Record header (5 bytes)
 	0x16,       // handshake record
-	0x03, 0x03, // protocol version 3.3 (TLS 1.2)
+	0x03, 0x00, // protocol version 3.3 (TLS 1.2)
 	0x00, 0x00, // handshake payload size (ignored)
 
 	// Handshake header (4 bytes)
@@ -40,13 +40,13 @@ var serverHelloHandshakeBytes = []byte{
 	0x00, 0x00, 0x00, // Server Hello payload size (ignored)
 
 	// Server Version (2 bytes)
-	0x03, 0x03, // protocol version 3.3 (TLS 1.2)
+	0x03, 0x00, // protocol version 3.3 (TLS 1.2)
 }
 
 var serverHelloHandshakeMask = []byte{
 	// Record header (5 bytes)
 	0xff,       // handshake record
-	0xff, 0xff, // protocol version
+	0xff, 0x00, // protocol version
 	0x00, 0x00, // handshake payload size (ignored)
 
 	// Handshake header (4 bytes)
@@ -54,7 +54,7 @@ var serverHelloHandshakeMask = []byte{
 	0x00, 0x00, 0x00, // Server Hello payload size (ignored)
 
 	// Server Version (2 bytes)
-	0xff, 0xff, // protocol version
+	0xff, 0x00, // protocol version
 }
 
 func (*tlsServerParserFactory) accepts(input memview.MemView) (decision gnet.AcceptDecision, discardFront int64) {
