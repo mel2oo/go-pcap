@@ -87,7 +87,7 @@ func TestPcapParse(t *testing.T) {
 
 func TestTLS(t *testing.T) {
 	traffic, err := NewTrafficParser(
-		WithReadName("/Users/whoami/Downloads/test.pcapng", false),
+		WithReadName("../testdata/dump.pcap", false),
 		WithStreamCloseTimeout(int64(time.Second)*300),
 		WithStreamFlushTimeout(int64(time.Second)*300),
 	)
@@ -134,11 +134,13 @@ func TestTLS(t *testing.T) {
 	for _, t := range tlss {
 		switch ch := t.Content.(type) {
 		case gnet.TLSClientHello:
-			fmt.Printf("%#v", ch.ServerName)
-			fmt.Println("client: ", ja3.GetJa3Hash(ch))
+			fin, md5 := ja3.GetJa3Hash(ch)
+			fmt.Printf("client: %s md5:%s\n", fin, md5)
+			fmt.Printf("src:%s dst:%s\n", t.SrcIP.String(), t.DstIP.String())
 		case gnet.TLSServerHello:
-			fmt.Printf("%#v", ch)
-			fmt.Println("server: ", ja3.GetJa3SHash(ch))
+			fin, md5 := ja3.GetJa3SHash(ch)
+			fmt.Printf("server: %s md5:%s\n", fin, md5)
+			fmt.Printf("src:%s dst:%s\n", t.SrcIP.String(), t.DstIP.String())
 		}
 	}
 }
