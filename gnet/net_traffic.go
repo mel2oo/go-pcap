@@ -207,12 +207,15 @@ type TLSClientHello struct {
 	// Identifies the TCP connection to which this message belongs.
 	ConnectionID uuid.UUID
 
-	// The DNS hostname extracted from the SNI extension, if any.
-	Hostname *string
+	// 计算ja3所需字段
+	Version         TLSHandshakeVersion
+	CipherSuites    []uint16
+	Extensions      []uint16
+	SupportedCurves []uint16
+	SupportedPoints []uint8
 
-	// The list of protocols supported by the client, as seen in the ALPN
-	// extension.
-	SupportedProtocols []string
+	ServerName    string
+	AlpnProtocols []string
 }
 
 var _ ParsedNetworkContent = (*TLSClientHello)(nil)
@@ -223,18 +226,20 @@ func (TLSClientHello) ReleaseBuffers() {}
 type TLSServerHello struct {
 	// Identifies the TCP connection to which this message belongs.
 	ConnectionID uuid.UUID
-
 	// The inferred TLS version.
 	Version TLSVersion
-
 	// The selected application-layer protocol, as seen in the ALPN extension, if
 	// any.
 	SelectedProtocol *string
-
 	// The DNS host names appearing in the SAN extensions of the server's
 	// certificate, if observed. The server's certificate is encrypted in TLS 1.3,
 	// so this is only populated for TLS 1.2 connections.
 	DNSNames []string
+
+	// 计算ja3所需字段
+	HandshakeVersion TLSHandshakeVersion
+	CipherSuite      uint16
+	Extensions       []uint16
 }
 
 var _ ParsedNetworkContent = (*TLSServerHello)(nil)
@@ -289,12 +294,12 @@ func (tls *TLSHandshakeMetadata) AddClientHello(hello *TLSClientHello) error {
 	// Copy the information in the given Client Hello, in case it is later
 	// changed.
 
-	if hello.Hostname != nil {
-		hostname := *hello.Hostname
+	if hello.ServerName != "" {
+		hostname := hello.ServerName
 		tls.SNIHostname = &hostname
 	}
 
-	tls.SupportedProtocols = append(tls.SupportedProtocols, hello.SupportedProtocols...)
+	tls.SupportedProtocols = append(tls.SupportedProtocols, hello.AlpnProtocols...)
 
 	return nil
 }

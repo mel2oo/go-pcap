@@ -336,6 +336,15 @@ func (r *MemViewReader) ReadByte() (byte, error) {
 	return 0, io.EOF
 }
 
+func (r *MemViewReader) ReadByteAndTruncate() (length byte, fieldReader *MemViewReader, err error) {
+	length, err = r.ReadByte()
+	if err != nil {
+		return 0, nil, err
+	}
+	fieldReader, err = r.Truncate(int64(length))
+	return length, fieldReader, err
+}
+
 // Seeks past a variable-length field by reading the next byte value and seeking
 // that number of bytes.
 func (r *MemViewReader) ReadByteAndSeek() error {
