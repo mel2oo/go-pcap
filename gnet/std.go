@@ -2,7 +2,7 @@ package gnet
 
 import (
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 
 	"github.com/google/uuid"
@@ -38,7 +38,7 @@ func (r HTTPRequest) ToStdRequest() *http.Request {
 		Host:          r.Host,
 		Header:        r.Header,
 		ContentLength: int64(r.Body.Len()),
-		Body:          ioutil.NopCloser(r.Body.CreateReader()),
+		Body:          io.NopCloser(r.Body.CreateReader()),
 	}
 
 	// Add any cookies in r.Cookies not already in r.Header.
@@ -79,7 +79,7 @@ func (r HTTPResponse) ToStdResponse() *http.Response {
 		ProtoMinor:    r.ProtoMinor,
 		Header:        r.Header,
 		ContentLength: int64(r.Body.Len()),
-		Body:          ioutil.NopCloser(r.Body.CreateReader()),
+		Body:          io.NopCloser(r.Body.CreateReader()),
 	}
 
 	// Add any cookies in r.Cookies not already in r.Header.

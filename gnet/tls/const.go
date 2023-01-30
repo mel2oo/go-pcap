@@ -41,11 +41,13 @@ const (
 	//     03 03 - protocol version 3.3 (TLS 1.2)
 	minTLSServerHelloLength_bytes = 11
 
+	// handshake(1) + version(2) + length(2)
 	tlsRecordHeaderLength_bytes = 5
-	handshakeHeaderLength_bytes = 4
 
-	clientVersionLength_bytes = 2
-	clientRandomLength_bytes  = 32
+	// handshake(1) + length(3)
+	handshakeHeaderLength_bytes = 4
+	clientVersionLength_bytes   = 2
+	clientRandomLength_bytes    = 32
 
 	serverVersionLength_bytes           = 2
 	serverRandomLength_bytes            = 32
@@ -55,9 +57,12 @@ const (
 
 type tlsExtensionID uint16
 
+// TLS extension numbers
 const (
-	serverNameTLSExtensionID        tlsExtensionID = 0x00_00
-	alpnTLSExtensionID              tlsExtensionID = 0x00_10
+	serverNameExtensionID           tlsExtensionID = 0
+	supportedCurvesExtensionID      tlsExtensionID = 10
+	supportedPointsExtensionID      tlsExtensionID = 11
+	alpnExtensionID                 tlsExtensionID = 16
 	supportedVersionsTLSExtensionID tlsExtensionID = 0x00_2b
 )
 

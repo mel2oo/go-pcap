@@ -72,28 +72,46 @@ func (parser *tlsClientHelloParser) parse(input memview.MemView) (result gnet.Pa
 	buf := parser.allInput.SubView(tlsRecordHeaderLength_bytes, handshakeMsgEndPos)
 	reader := buf.CreateReader()
 
-	// Seek past some headers.
-	_, err = reader.Seek(handshakeHeaderLength_bytes+clientVersionLength_bytes+clientRandomLength_bytes, io.SeekCurrent)
+	hello := gnet.TLSClientHello{
+		ConnectionID: parser.connectionID,
+	}
+	// seak handshake header
+	_, err = reader.Seek(handshakeHeaderLength_bytes, io.SeekCurrent)
 	if err != nil {
 		return nil, 0, err
 	}
 
-	// Now at the session ID, which is a variable-length vector. Seek past this.
-	// The first byte indicates the vector's length in bytes.
+	// read version
+	v, err := reader.ReadUint16()
+	if err != nil {
+		return nil, 0, err
+	}
+	hello.Version = gnet.TLSHandshakeVersion(v)
+
+	// seek random
+	_, err = reader.Seek(clientRandomLength_bytes, io.SeekCurrent)
+	if err != nil {
+		return nil, 0, err
+	}
+	// seek session
 	err = reader.ReadByteAndSeek()
 	if err != nil {
 		return nil, 0, err
 	}
-
-	// Now at the cipher suites. Seek past this. The first two bytes gives the
-	// length of this header in bytes.
-	err = reader.ReadUint16AndSeek()
+	// read cipher suites
+	suites, err := reader.ReadUint16()
 	if err != nil {
 		return nil, 0, err
 	}
+	for i := uint16(0); i < suites/2; i++ {
+		s, err := reader.ReadUint16()
+		if err != nil {
+			return nil, 0, err
+		}
+		hello.CipherSuites = append(hello.CipherSuites, s)
+	}
 
-	// Now at the compression methods. Seek past this. The first byte gives the
-	// length of this header in bytes.
+	// seek compression methods
 	err = reader.ReadByteAndSeek()
 	if err != nil {
 		return nil, 0, err
@@ -106,12 +124,9 @@ func (parser *tlsClientHelloParser) parse(input memview.MemView) (result gnet.Pa
 		return nil, 0, errors.New("malformed TLS message")
 	}
 
-	dnsHostname := (*string)(nil)
-	protocols := []string{}
-
+	var extensionType tlsExtensionID
 	for {
 		// The first two bytes of the extension give the extension type.
-		var extensionType tlsExtensionID
 		{
 			val, err := reader.ReadUint16()
 			if err == io.EOF {
@@ -122,6 +137,9 @@ func (parser *tlsClientHelloParser) parse(input memview.MemView) (result gnet.Pa
 			}
 			extensionType = tlsExtensionID(val)
 		}
+
+		// append extensions
+		hello.Extensions = append(hello.Extensions, uint16(extensionType))
 
 		// The following two bytes give the extension's content length in bytes.
 		// Isolate the extension in its own reader.
@@ -135,26 +153,81 @@ func (parser *tlsClientHelloParser) parse(input memview.MemView) (result gnet.Pa
 		if err != nil {
 			return nil, 0, err
 		}
-
 		switch extensionType {
-		case serverNameTLSExtensionID:
+		// ServerName
+		case serverNameExtensionID:
 			serverName, err := parser.parseServerNameExtension(extensionReader)
 			if err == nil {
-				dnsHostname = &serverName
+				hello.ServerName = serverName
 			}
+		case alpnExtensionID:
+			hello.AlpnProtocols = parser.parseALPNExtension(extensionReader)
 
-		case alpnTLSExtensionID:
-			protocols = parser.parseALPNExtension(extensionReader)
+		case supportedCurvesExtensionID:
+			hello.SupportedCurves = parser.parseSupportedCurves(extensionReader)
+		case supportedPointsExtensionID:
+			hello.SupportedPoints = parser.parseSupportedPoints(extensionReader)
 		}
 	}
 
-	hello := gnet.TLSClientHello{
-		ConnectionID:       parser.connectionID,
-		Hostname:           dnsHostname,
-		SupportedProtocols: protocols,
+	return hello, handshakeMsgEndPos, nil
+}
+
+func (*tlsClientHelloParser) parseSupportedCurves(reader *memview.MemViewReader) []uint16 {
+	_, reader, err := reader.ReadUint16AndTruncate()
+	if err != nil {
+		return nil
 	}
 
-	return hello, handshakeMsgEndPos, nil
+	groups := make([]uint16, 0)
+	for {
+		g, err := reader.ReadUint16()
+		if err != nil {
+			return groups
+		}
+		groups = append(groups, g)
+	}
+}
+
+func (*tlsClientHelloParser) parseSupportedPoints(reader *memview.MemViewReader) []uint8 {
+	_, reader, err := reader.ReadByteAndTruncate()
+	if err != nil {
+		return nil
+	}
+	points := make([]uint8, 0)
+	for {
+		p, err := reader.ReadByte()
+		if err != nil {
+			return points
+		}
+		points = append(points, p)
+	}
+}
+
+// Extracts the list of protocols from a buffer containing a TLS ALPN extension.
+func (*tlsClientHelloParser) parseALPNExtension(reader *memview.MemViewReader) []string {
+	result := []string{}
+	var err error
+
+	// The ALPN extension is a list of strings indicating the protocols supported
+	// by the client. Isolate this list in the reader. The first two bytes gives
+	// the length of the list in bytes.
+	_, reader, err = reader.ReadUint16AndTruncate()
+	if err != nil {
+		return result
+	}
+
+	for {
+		// The first byte of each list element gives the length of the string in
+		// bytes.
+		protocol, err := reader.ReadString_byte()
+		if err != nil {
+			// Out of elements.
+			return result
+		}
+
+		result = append(result, string(protocol))
+	}
 }
 
 // Extracts the DNS hostname from a buffer containing a TLS SNI extension.
@@ -201,30 +274,4 @@ func (*tlsClientHelloParser) parseServerNameExtension(reader *memview.MemViewRea
 	}
 
 	return "", errors.New("no DNS hostname found in SNI extension")
-}
-
-// Extracts the list of protocols from a buffer containing a TLS ALPN extension.
-func (*tlsClientHelloParser) parseALPNExtension(reader *memview.MemViewReader) []string {
-	result := []string{}
-	var err error
-
-	// The ALPN extension is a list of strings indicating the protocols supported
-	// by the client. Isolate this list in the reader. The first two bytes gives
-	// the length of the list in bytes.
-	_, reader, err = reader.ReadUint16AndTruncate()
-	if err != nil {
-		return result
-	}
-
-	for {
-		// The first byte of each list element gives the length of the string in
-		// bytes.
-		protocol, err := reader.ReadString_byte()
-		if err != nil {
-			// Out of elements.
-			return result
-		}
-
-		result = append(result, string(protocol))
-	}
 }

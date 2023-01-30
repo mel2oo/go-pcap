@@ -73,21 +73,42 @@ func (parser *tlsServerHelloParser) parse(input memview.MemView) (result gnet.Pa
 	buf := parser.allInput.SubView(tlsRecordHeaderLength_bytes, handshakeMsgEndPos)
 	reader := buf.CreateReader()
 
-	// Seek past some headers.
-	_, err = reader.Seek(handshakeHeaderLength_bytes+serverVersionLength_bytes+serverRandomLength_bytes, io.SeekCurrent)
+	hello := gnet.TLSServerHello{
+		ConnectionID: parser.connectionID,
+	}
+	// seak handshake header
+	_, err = reader.Seek(handshakeHeaderLength_bytes, io.SeekCurrent)
 	if err != nil {
 		return nil, 0, err
 	}
 
-	// Now at the session ID, which is a variable-length vector. Seek past this.
-	// The first byte indicates the vector's length in bytes.
+	// read version
+	v, err := reader.ReadUint16()
+	if err != nil {
+		return nil, 0, err
+	}
+	hello.HandshakeVersion = gnet.TLSHandshakeVersion(v)
+
+	// seek random
+	_, err = reader.Seek(clientRandomLength_bytes, io.SeekCurrent)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	// seek session
 	err = reader.ReadByteAndSeek()
 	if err != nil {
 		return nil, 0, err
 	}
 
-	// Seek past more headers.
-	_, err = reader.Seek(serverCiphersuiteLength_bytes+serverCompressionMethodLength_bytes, io.SeekCurrent)
+	// read cipher suite
+	hello.CipherSuite, err = reader.ReadUint16()
+	if err != nil {
+		return nil, 0, err
+	}
+
+	// seek (1) compression method
+	_, err = reader.Seek(serverCompressionMethodLength_bytes, io.SeekCurrent)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -116,6 +137,8 @@ func (parser *tlsServerHelloParser) parse(input memview.MemView) (result gnet.Pa
 			}
 			extensionType = tlsExtensionID(val)
 		}
+		// append extensions
+		hello.Extensions = append(hello.Extensions, uint16(extensionType))
 
 		// The following two bytes give the extension's content length in bytes.
 		// Isolate the extension in its own reader.
@@ -137,7 +160,7 @@ func (parser *tlsServerHelloParser) parse(input memview.MemView) (result gnet.Pa
 				selectedVersion = version
 			}
 
-		case alpnTLSExtensionID:
+		case alpnExtensionID:
 			protocol, err := parser.parseALPNExtension(extensionReader)
 			if err == nil {
 				selectedProtocol = &protocol
@@ -234,12 +257,9 @@ func (parser *tlsServerHelloParser) parse(input memview.MemView) (result gnet.Pa
 		dnsNames = cert.DNSNames
 	}
 
-	hello := gnet.TLSServerHello{
-		ConnectionID:     parser.connectionID,
-		Version:          selectedVersion,
-		SelectedProtocol: selectedProtocol,
-		DNSNames:         dnsNames,
-	}
+	hello.Version = selectedVersion
+	hello.SelectedProtocol = selectedProtocol
+	hello.DNSNames = dnsNames
 
 	return hello, handshakeMsgEndPos, nil
 }
