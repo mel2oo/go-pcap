@@ -17,7 +17,7 @@ const (
 
 // GetJa3SHash returns the JA3 fingerprint hash of the tls client hello.
 // SSLVersion,Cipher,SSLExtension,EllipticCurve,EllipticCurvePointFormat
-func GetJa3Hash(clientHello gnet.TLSClientHello) string {
+func GetJa3Hash(clientHello gnet.TLSClientHello) (string, string) {
 	byteString := make([]byte, 0)
 
 	// Version
@@ -71,12 +71,12 @@ func GetJa3Hash(clientHello gnet.TLSClientHello) string {
 	}
 
 	h := md5.Sum(byteString)
-	return hex.EncodeToString(h[:])
+	return string(byteString), hex.EncodeToString(h[:])
 }
 
 // GetJa3SHash returns the JA3 fingerprint hash of the tls server hello.
 // SSLVersion,Cipher,SSLExtension
-func GetJa3SHash(serverHello gnet.TLSServerHello) string {
+func GetJa3SHash(serverHello gnet.TLSServerHello) (string, string) {
 	byteString := make([]byte, 0)
 
 	// Version
@@ -96,7 +96,7 @@ func GetJa3SHash(serverHello gnet.TLSServerHello) string {
 	}
 
 	h := md5.Sum(byteString)
-	return hex.EncodeToString(h[:])
+	return string(byteString), hex.EncodeToString(h[:])
 }
 
 func appendExtension(byteString []byte, exType uint16) []byte {
