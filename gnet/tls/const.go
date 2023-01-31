@@ -1,7 +1,5 @@
 package tls
 
-import "github.com/mel2oo/go-pcap/gnet"
-
 const (
 	// Minimum number of bytes needed before we can determine whether we can
 	// accept some bytes as a TLS 1.2 or 1.3 Client Hello.
@@ -71,7 +69,3 @@ type sniType byte
 const (
 	dnsHostnameSNIType sniType = 0x00
 )
-
-var tlsVersionMap = map[uint16]gnet.TLSVersion{
-	0x03_04: gnet.TLS_v1_3,
-}

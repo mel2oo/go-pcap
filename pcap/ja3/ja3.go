@@ -80,7 +80,7 @@ func GetJa3SHash(serverHello gnet.TLSServerHello) (string, string) {
 	byteString := make([]byte, 0)
 
 	// Version
-	byteString = strconv.AppendUint(byteString, uint64(serverHello.HandshakeVersion), 10)
+	byteString = strconv.AppendUint(byteString, uint64(serverHello.Version), 10)
 	byteString = append(byteString, commaByte)
 
 	// Cipher Suite

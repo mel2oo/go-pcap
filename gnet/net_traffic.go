@@ -208,7 +208,7 @@ type TLSClientHello struct {
 	ConnectionID uuid.UUID
 
 	// 计算ja3所需字段
-	Version         TLSHandshakeVersion
+	Version         TLSVersion
 	CipherSuites    []uint16
 	Extensions      []uint16
 	SupportedCurves []uint16
@@ -226,20 +226,11 @@ func (TLSClientHello) ReleaseBuffers() {}
 type TLSServerHello struct {
 	// Identifies the TCP connection to which this message belongs.
 	ConnectionID uuid.UUID
-	// The inferred TLS version.
-	Version TLSVersion
-	// The selected application-layer protocol, as seen in the ALPN extension, if
-	// any.
-	SelectedProtocol *string
-	// The DNS host names appearing in the SAN extensions of the server's
-	// certificate, if observed. The server's certificate is encrypted in TLS 1.3,
-	// so this is only populated for TLS 1.2 connections.
-	DNSNames []string
 
 	// 计算ja3所需字段
-	HandshakeVersion TLSHandshakeVersion
-	CipherSuite      uint16
-	Extensions       []uint16
+	Version     TLSVersion
+	CipherSuite uint16
+	Extensions  []uint16
 }
 
 var _ ParsedNetworkContent = (*TLSServerHello)(nil)
@@ -252,7 +243,7 @@ type TLSHandshakeMetadata struct {
 	ConnectionID uuid.UUID
 
 	// The inferred TLS version. Only populated if the Server Hello was seen.
-	Version *TLSVersion
+	Version TLSVersion
 
 	// The DNS hostname extracted from the client's SNI extension, if any.
 	SNIHostname *string
@@ -317,16 +308,7 @@ func (tls *TLSHandshakeMetadata) AddServerHello(hello *TLSServerHello) error {
 	// Make local copies of the information in the given Server Hello, in case it
 	// is later changed.
 
-	version := hello.Version
-	tls.Version = &version
-
-	if hello.SelectedProtocol != nil {
-		protocol := *hello.SelectedProtocol
-		tls.SelectedProtocol = &protocol
-	}
-
-	tls.SubjectAlternativeNames = append(tls.SubjectAlternativeNames, hello.DNSNames...)
-
+	tls.Version = hello.Version
 	return nil
 }
 
@@ -368,7 +350,7 @@ func (tls *TLSHandshakeMetadata) ApplicationLatencyMeasurable() bool {
 	// selection to figure out the application-layer protocol, but this is
 	// encrypted in TLS 1.3. If we have anything but TLS 1.2, conservatively
 	// return false.
-	if tls.Version == nil || *tls.Version != TLS_v1_2 {
+	if tls.Version == 0 || tls.Version != TLSV1_2 {
 		return false
 	}
 

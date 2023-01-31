@@ -86,7 +86,7 @@ func (parser *tlsClientHelloParser) parse(input memview.MemView) (result gnet.Pa
 	if err != nil {
 		return nil, 0, err
 	}
-	hello.Version = gnet.TLSHandshakeVersion(v)
+	hello.Version = gnet.TLSVersion(v)
 
 	// seek random
 	_, err = reader.Seek(clientRandomLength_bytes, io.SeekCurrent)
