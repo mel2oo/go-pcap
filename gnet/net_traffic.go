@@ -389,3 +389,27 @@ type QUICHandshakeMetadata struct {
 }
 
 func (QUICHandshakeMetadata) ReleaseBuffers() {}
+
+// FtpSmtpRequest
+type FtpSmtpRequest struct {
+	// stream id
+	ConnectionID uuid.UUID
+	CMD          string
+	Arg          string
+}
+
+var _ ParsedNetworkContent = (*FtpSmtpRequest)(nil)
+
+func (FtpSmtpRequest) ReleaseBuffers() {}
+
+// FtpSmtpResponse
+type FtpSmtpResponse struct {
+	// stream id
+	ConnectionID uuid.UUID
+	Code         string
+	Arg          string
+}
+
+var _ ParsedNetworkContent = (*FtpSmtpResponse)(nil)
+
+func (FtpSmtpResponse) ReleaseBuffers() {}
