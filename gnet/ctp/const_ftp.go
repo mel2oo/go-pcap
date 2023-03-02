@@ -86,7 +86,7 @@ var FtpCMDS = []CMD{
 	FtpNoop,
 }
 
-func checkFtpCMD(b []byte) bool {
+func CheckFtpCMD(b []byte) bool {
 	for _, c := range FtpCMDS {
 		if CMD(string(b)) == c {
 			return true

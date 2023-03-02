@@ -132,11 +132,5 @@ func (factory *ctpResponseParserFactory) CreateParser(id uuid.UUID, seq, ack rea
 }
 
 func CheckRequestCMD(b []byte) bool {
-	if checkFtpCMD(b) {
-		return true
-	}
-	if checkSmtpCMD(b) {
-		return true
-	}
-	return false
+	return CheckFtpCMD(b) || CheckSmtpCMD(b)
 }

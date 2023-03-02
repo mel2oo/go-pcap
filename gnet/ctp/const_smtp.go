@@ -31,7 +31,7 @@ var SmtpCMDS = []CMD{
 	SmtpQuit,
 }
 
-func checkSmtpCMD(b []byte) bool {
+func CheckSmtpCMD(b []byte) bool {
 	for _, c := range SmtpCMDS {
 		if CMD(string(b)) == c {
 			return true
