@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/mel2oo/go-pcap/gnet"
-	"github.com/mel2oo/go-pcap/gnet/ftp"
+	"github.com/mel2oo/go-pcap/gnet/ctp"
 	ghttp "github.com/mel2oo/go-pcap/gnet/http"
 	gtls "github.com/mel2oo/go-pcap/gnet/tls"
 	"github.com/mel2oo/go-pcap/mempool"
@@ -156,8 +156,8 @@ func TestFTP(t *testing.T) {
 	}
 
 	out, err := traffic.Parse(context.TODO(),
-		ftp.NewFTPRequestParserFactory(),
-		ftp.NewFTPResponseParserFactory(),
+		ctp.NewCtpRequestParserFactory(),
+		ctp.NewCtpResponseParserFactory(),
 	)
 	if err != nil {
 		t.Error(err)
@@ -181,8 +181,8 @@ func TestFTP(t *testing.T) {
 
 			tcps[c.ConnectionID.String()] = append(tcps[c.ConnectionID.String()], c)
 
-			_, ok1 := c.Content.(gnet.FTPRequest)
-			_, ok2 := c.Content.(gnet.FTPResponse)
+			_, ok1 := c.Content.(gnet.FtpSmtpRequest)
+			_, ok2 := c.Content.(gnet.FtpSmtpResponse)
 			if ok1 || ok2 {
 				ftps = append(ftps, c)
 			}
@@ -191,9 +191,63 @@ func TestFTP(t *testing.T) {
 
 	for _, f := range ftps {
 		switch ff := f.Content.(type) {
-		case gnet.FTPRequest:
+		case gnet.FtpSmtpRequest:
 			t.Logf("(%s) cmd: %s arg: %s\n", ff.ConnectionID, ff.CMD, ff.Arg)
-		case gnet.FTPResponse:
+		case gnet.FtpSmtpResponse:
+			t.Logf("(%s) code: %s arg: %s", ff.ConnectionID, ff.Code, ff.Arg)
+		}
+	}
+}
+
+func TestSMTP(t *testing.T) {
+	traffic, err := NewTrafficParser(
+		WithReadName("../testdata/smtp-normal.pcapng", false),
+		WithStreamCloseTimeout(int64(time.Second)*300),
+		WithStreamFlushTimeout(int64(time.Second)*300),
+	)
+	if err != nil {
+		t.Error(err)
+	}
+
+	out, err := traffic.Parse(context.TODO(),
+		ctp.NewCtpRequestParserFactory(),
+		ctp.NewCtpResponseParserFactory(),
+	)
+	if err != nil {
+		t.Error(err)
+	}
+
+	tcps := make(map[string][]gnet.NetTraffic)
+	ftps := make([]gnet.NetTraffic, 0)
+
+	for c := range out {
+		// Remove TCP metadata, which was added after this test was written.
+		if _, ignore := c.Content.(gnet.TCPPacketMetadata); ignore {
+			c.Content.ReleaseBuffers()
+			continue
+		}
+
+		if c.LayerType == "TCP" {
+			_, ok := tcps[c.ConnectionID.String()]
+			if !ok {
+				tcps[c.ConnectionID.String()] = make([]gnet.NetTraffic, 0)
+			}
+
+			tcps[c.ConnectionID.String()] = append(tcps[c.ConnectionID.String()], c)
+
+			_, ok1 := c.Content.(gnet.FtpSmtpRequest)
+			_, ok2 := c.Content.(gnet.FtpSmtpResponse)
+			if ok1 || ok2 {
+				ftps = append(ftps, c)
+			}
+		}
+	}
+
+	for _, f := range ftps {
+		switch ff := f.Content.(type) {
+		case gnet.FtpSmtpRequest:
+			t.Logf("(%s) cmd: %s arg: %s\n", ff.ConnectionID, ff.CMD, ff.Arg)
+		case gnet.FtpSmtpResponse:
 			t.Logf("(%s) code: %s arg: %s", ff.ConnectionID, ff.Code, ff.Arg)
 		}
 	}

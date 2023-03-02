@@ -1,4 +1,4 @@
-package ftp
+package ctp
 
 import (
 	"bytes"
@@ -9,22 +9,22 @@ import (
 	"github.com/mel2oo/go-pcap/memview"
 )
 
-func NewFTPRequestParserFactory() gnet.TCPParserFactory {
-	return &ftpRequestParserFactory{}
+func NewCtpRequestParserFactory() gnet.TCPParserFactory {
+	return &ctpRequestParserFactory{}
 }
 
-func NewFTPResponseParserFactory() gnet.TCPParserFactory {
-	return &ftpResponseParserFactory{}
+func NewCtpResponseParserFactory() gnet.TCPParserFactory {
+	return &ctpResponseParserFactory{}
 }
 
-// ftp request
-type ftpRequestParserFactory struct{}
+// ctp request
+type ctpRequestParserFactory struct{}
 
-func (*ftpRequestParserFactory) Name() string {
-	return "FTP Request Parser Factory"
+func (*ctpRequestParserFactory) Name() string {
+	return "Ftp/Smtp Request Parser Factory"
 }
 
-func (factory *ftpRequestParserFactory) Accepts(input memview.MemView, isEnd bool) (decision gnet.AcceptDecision, discardFront int64) {
+func (factory *ctpRequestParserFactory) Accepts(input memview.MemView, isEnd bool) (decision gnet.AcceptDecision, discardFront int64) {
 	decision, discardFront = factory.accepts(input)
 
 	if decision == gnet.NeedMoreData && isEnd {
@@ -35,7 +35,6 @@ func (factory *ftpRequestParserFactory) Accepts(input memview.MemView, isEnd boo
 }
 
 var (
-	// https://www.w3.org/Protocols/rfc959/4_FileTransfer.html
 	// # Request
 	// ## Request CMD
 	// 		xxx
@@ -54,20 +53,22 @@ var (
 	// 		... 		##不定长
 	// ##结束符
 	// 		/r/n (0x0d,0x0a)
-	minFtpCMDLengthBytes int64 = 3 + 1 + 1 + 2
+	minFtpCMDLengthBytes int64 = 3 + 2
 )
 
-func (*ftpRequestParserFactory) accepts(input memview.MemView) (decision gnet.AcceptDecision, discardFront int64) {
+func (*ctpRequestParserFactory) accepts(input memview.MemView) (decision gnet.AcceptDecision, discardFront int64) {
 	if input.Len() < minFtpCMDLengthBytes {
 		return gnet.NeedMoreData, 0
 	}
 
 	data := input.Bytes()
 	i := bytes.Index(data, []byte{0x20})
-	if i < 0 {
-		return gnet.Reject, 0
+	var cmd []byte
+	if i == -1 {
+		cmd = getRequestArg(data)
+	} else {
+		cmd = data[:i]
 	}
-	cmd := data[:i]
 	// match request cmd
 	if !CheckRequestCMD(cmd) {
 		return gnet.Reject, 0
@@ -81,18 +82,18 @@ func (*ftpRequestParserFactory) accepts(input memview.MemView) (decision gnet.Ac
 	return gnet.Accept, 0
 }
 
-func (factory *ftpRequestParserFactory) CreateParser(id uuid.UUID, seq, ack reassembly.Sequence) gnet.TCPParser {
-	return newFtpRequestParser(id)
+func (factory *ctpRequestParserFactory) CreateParser(id uuid.UUID, seq, ack reassembly.Sequence) gnet.TCPParser {
+	return newCtpRequestParser(id)
 }
 
-// ftp response
-type ftpResponseParserFactory struct{}
+// ctp response
+type ctpResponseParserFactory struct{}
 
-func (*ftpResponseParserFactory) Name() string {
-	return "FTP Response Parser Factory"
+func (*ctpResponseParserFactory) Name() string {
+	return "Ftp/Smtp Response Parser Factory"
 }
 
-func (factory *ftpResponseParserFactory) Accepts(input memview.MemView, isEnd bool) (decision gnet.AcceptDecision, discardFront int64) {
+func (factory *ctpResponseParserFactory) Accepts(input memview.MemView, isEnd bool) (decision gnet.AcceptDecision, discardFront int64) {
 	decision, discardFront = factory.accepts(input)
 
 	if decision == gnet.NeedMoreData && isEnd {
@@ -102,7 +103,7 @@ func (factory *ftpResponseParserFactory) Accepts(input memview.MemView, isEnd bo
 	return decision, discardFront
 }
 
-func (*ftpResponseParserFactory) accepts(input memview.MemView) (decision gnet.AcceptDecision, discardFront int64) {
+func (*ctpResponseParserFactory) accepts(input memview.MemView) (decision gnet.AcceptDecision, discardFront int64) {
 	if input.Len() < minFtpCMDLengthBytes {
 		return gnet.NeedMoreData, 0
 	}
@@ -126,6 +127,16 @@ func (*ftpResponseParserFactory) accepts(input memview.MemView) (decision gnet.A
 	return gnet.Accept, 0
 }
 
-func (factory *ftpResponseParserFactory) CreateParser(id uuid.UUID, seq, ack reassembly.Sequence) gnet.TCPParser {
-	return newFtpResponseParser(id)
+func (factory *ctpResponseParserFactory) CreateParser(id uuid.UUID, seq, ack reassembly.Sequence) gnet.TCPParser {
+	return newCtpResponseParser(id)
+}
+
+func CheckRequestCMD(b []byte) bool {
+	if checkFtpCMD(b) {
+		return true
+	}
+	if checkSmtpCMD(b) {
+		return true
+	}
+	return false
 }
