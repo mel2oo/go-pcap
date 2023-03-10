@@ -15,7 +15,7 @@ func NewTLSServerParserFactory() gnet.TCPParserFactory {
 type tlsServerParserFactory struct{}
 
 func (*tlsServerParserFactory) Name() string {
-	return "TLS 1.2/1.3 Server Parser Factory"
+	return "TLS Server Parser Factory"
 }
 
 func (factory *tlsServerParserFactory) Accepts(input memview.MemView, isEnd bool) (decision gnet.AcceptDecision, discardFront int64) {

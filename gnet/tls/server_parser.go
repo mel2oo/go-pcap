@@ -23,7 +23,7 @@ type tlsServerHelloParser struct {
 var _ gnet.TCPParser = (*tlsServerHelloParser)(nil)
 
 func (*tlsServerHelloParser) Name() string {
-	return "TLS 1.2/1.3 Server-Hello Parser"
+	return "TLS Server-Hello Parser"
 }
 
 func (parser *tlsServerHelloParser) Parse(input memview.MemView, isEnd bool) (result gnet.ParsedNetworkContent, unused memview.MemView, totalBytesConsumed int64, err error) {
