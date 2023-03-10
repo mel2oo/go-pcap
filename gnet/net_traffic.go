@@ -1,6 +1,7 @@
 package gnet
 
 import (
+	"crypto/x509"
 	"net"
 	"net/http"
 	"net/url"
@@ -236,6 +237,17 @@ type TLSServerHello struct {
 var _ ParsedNetworkContent = (*TLSServerHello)(nil)
 
 func (TLSServerHello) ReleaseBuffers() {}
+
+// Represents metadata from an observed TLS Certificate message.
+type TLSCertificate struct {
+	// Identifies the TCP connection to which this message belongs.
+	ConnectionID uuid.UUID
+	Certificates []*x509.Certificate
+}
+
+var _ ParsedNetworkContent = (*TLSCertificate)(nil)
+
+func (TLSCertificate) ReleaseBuffers() {}
 
 // Metadata from an observed TLS handshake.
 type TLSHandshakeMetadata struct {

@@ -252,3 +252,67 @@ func TestSMTP(t *testing.T) {
 		}
 	}
 }
+
+func TestTLSCertificate(t *testing.T) {
+	traffic, err := NewTrafficParser(
+		WithReadName("../testdata/dump.pcap", false),
+		WithStreamCloseTimeout(int64(time.Second)*300),
+		WithStreamFlushTimeout(int64(time.Second)*300),
+	)
+	if err != nil {
+		t.Error(err)
+	}
+
+	out, err := traffic.Parse(context.TODO(),
+		gtls.NewTLSClientParserFactory(),
+		gtls.NewTLSServerParserFactory(),
+		gtls.NewTLSCertificateParserFactory(),
+	)
+	if err != nil {
+		t.Error(err)
+	}
+
+	tcps := make(map[string][]gnet.NetTraffic)
+	tlss := make([]gnet.NetTraffic, 0)
+
+	for c := range out {
+		// Remove TCP metadata, which was added after this test was written.
+		if _, ignore := c.Content.(gnet.TCPPacketMetadata); ignore {
+			c.Content.ReleaseBuffers()
+			continue
+		}
+
+		if c.LayerType == "TCP" {
+			_, ok := tcps[c.ConnectionID.String()]
+			if !ok {
+				tcps[c.ConnectionID.String()] = make([]gnet.NetTraffic, 0)
+			}
+
+			tcps[c.ConnectionID.String()] = append(tcps[c.ConnectionID.String()], c)
+
+			// TLS
+			_, ok1 := c.Content.(gnet.TLSClientHello)
+			_, ok2 := c.Content.(gnet.TLSServerHello)
+			_, ok3 := c.Content.(gnet.TLSCertificate)
+			if ok1 || ok2 || ok3 {
+				tlss = append(tlss, c)
+			}
+		}
+	}
+
+	for _, t := range tlss {
+		switch ch := t.Content.(type) {
+		case gnet.TLSClientHello:
+			fin, md5 := ja3.GetJa3Hash(ch)
+			fmt.Printf("client id:%s src:%s dst:%s ja3:%s md5:%s\n",
+				t.ConnectionID.String(), t.SrcIP.String(), t.DstIP.String(), fin, md5)
+		case gnet.TLSServerHello:
+			fin, md5 := ja3.GetJa3SHash(ch)
+			fmt.Printf("server id:%s src:%s dst:%s ja3s:%s md5:%s\n",
+				t.ConnectionID.String(), t.SrcIP.String(), t.DstIP.String(), fin, md5)
+		case gnet.TLSCertificate:
+			fmt.Printf("server id:%s src:%s dst:%s cert:%#v \n",
+				t.ConnectionID.String(), t.SrcIP.String(), t.DstIP.String(), ch)
+		}
+	}
+}
