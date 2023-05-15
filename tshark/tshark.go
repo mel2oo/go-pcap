@@ -2,18 +2,14 @@ package tshark
 
 import (
 	"crypto/x509"
+	"encoding/hex"
 	"os/exec"
 	"strings"
 	"sync/atomic"
 )
 
-type Certificate struct {
-	ServerName  string
-	Certificate *x509.Certificate
-}
-
 // tshark -nr testdata/tls.pcap -2R "tls.handshake.type == 1 || tls.handshake.certificate"  -Tfields -e tls.handshake.extensions_server_name -e tls.handshake.certificate
-func ExportCertificate(exe, pcapfile string) ([]Certificate, error) {
+func ExportCertificate(exe, pcapfile string) (map[string]*x509.Certificate, error) {
 	var err error
 	if exe, err = exec.LookPath(exe); err != nil {
 		return nil, err
@@ -26,21 +22,20 @@ func ExportCertificate(exe, pcapfile string) ([]Certificate, error) {
 		return nil, err
 	}
 
-	res := make([]Certificate, 0)
+	res := make(map[string]*x509.Certificate)
 	iterator := NewLineIterator(string(out))
 	for iterator.HasNext() {
 		host, _ := iterator.Get()
 		if host == "" {
 			continue
 		}
-		if !strings.HasPrefix(host, "\t") {
-			host = strings.TrimSpace(host)
-		} else {
+		if strings.Contains(host, ",") {
 			continue
 		}
+		host = strings.TrimSpace(host)
 
 		line, _ := iterator.Next()
-		if !strings.HasPrefix(line, "\t") {
+		if !strings.Contains(line, ",") {
 			continue
 		}
 
@@ -48,15 +43,19 @@ func ExportCertificate(exe, pcapfile string) ([]Certificate, error) {
 		if len(fields) != 2 {
 			continue
 		}
-		cert, err := x509.ParseCertificate([]byte(fields[0]))
+		data, err := hex.DecodeString(fields[0])
+		if err != nil {
+			continue
+		}
+		cert, err := x509.ParseCertificate(data)
 		if err != nil {
 			continue
 		}
 
-		res = append(res, Certificate{
-			ServerName:  host,
-			Certificate: cert,
-		})
+		_, ok := res[host]
+		if !ok {
+			res[host] = cert
+		}
 	}
 
 	return res, nil
