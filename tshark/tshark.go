@@ -29,18 +29,19 @@ func ExportCertificate(exe, pcapfile string) (map[string]*x509.Certificate, erro
 		if host == "" {
 			continue
 		}
-		if strings.Contains(host, ",") {
+		if !strings.Contains(host, ".") { // 非域名
 			continue
 		}
 		host = strings.TrimSpace(host)
 
 		line, _ := iterator.Next()
-		if !strings.Contains(line, ",") {
+		// 证书分隔符号
+		if strings.Contains(line, ".") || !strings.Contains(line, ",") {
 			continue
 		}
 
 		fields := strings.Split(strings.TrimSpace(line), ",")
-		if len(fields) != 2 {
+		if len(fields) < 1 { // 兼容多个证书
 			continue
 		}
 		data, err := hex.DecodeString(fields[0])
