@@ -3,6 +3,7 @@ package tshark
 import (
 	"crypto/x509"
 	"encoding/hex"
+	"fmt"
 	"os/exec"
 	"strings"
 	"sync/atomic"
@@ -14,8 +15,7 @@ func ExportCertificate(exe, pcapfile string) (map[string]*x509.Certificate, erro
 	if exe, err = exec.LookPath(exe); err != nil {
 		return nil, err
 	}
-
-	cmd := exec.Command(exe, "-nr", pcapfile, "-2R", "\"tls.handshake.type == 1 || tls.handshake.certificate\"", "-Tfields", "-e", "tls.handshake.extensions_server_name", "-e", "tls.handshake.certificate")
+	cmd := exec.Command("bash", "-c", fmt.Sprintf(`%s -nr %s -2R "tls.handshake.type == 1 || tls.handshake.certificate"  -Tfields -e tls.handshake.extensions_server_name -e tls.handshake.certificate`, exe, pcapfile))
 
 	out, err := cmd.Output()
 	if err != nil {
