@@ -136,6 +136,8 @@ func hasValidHTTPRequestLine(input memview.MemView) gnet.AcceptDecision {
 	}
 	if tail.Index(0, []byte("HTTP/1.1\r\n")) == 0 || tail.Index(0, []byte("HTTP/1.0\r\n")) == 0 {
 		return gnet.Accept
+	} else if tail.Index(0, []byte("HTTP/1.1\n")) == 0 || tail.Index(0, []byte("HTTP/1.0\n")) == 0 { // Some clients send HTTP requests with LF instead of CRLF.
+		return gnet.Accept
 	}
 
 	return gnet.Reject
